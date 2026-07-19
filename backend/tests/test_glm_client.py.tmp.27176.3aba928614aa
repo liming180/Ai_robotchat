@@ -1,0 +1,65 @@
+"""Tests for GLM client (httpx direct calls)."""
+import os
+from app.ai.glm_client import GLMClient, GLMClientError
+
+
+def test_glm_client_init_with_valid_key():
+    """初始化应成功（用 .env 里的 key）。"""
+    client = GLMClient()
+    assert client.api_key is not None
+    assert client.base_url == "https://open.bigmodel.cn/api/paas/v4"
+
+
+def test_glm_client_chat_with_system_prompt():
+    """带系统提示词的聊天应返回内容。"""
+    client = GLMClient()
+    response = client.chat(
+        model="glm-4-flash",
+        messages=[{"role": "user", "content": "你好"}],
+        system_prompt="你是一个温柔体贴的AI伴侣",
+    )
+    assert "content" in response
+    assert isinstance(response["content"], str)
+    assert len(response["content"]) > 0
+
+
+def test_glm_client_chat_stream():
+    """流式聊天应返回生成器，逐 token 生成。"""
+    client = GLMClient()
+    stream = client.chat_stream(
+        model="glm-4-flash",
+        messages=[{"role": "user", "content": "你好"}],
+        system_prompt="你是一个温柔体贴的AI伴侣",
+    )
+    # 检查是否是生成器
+    assert hasattr(stream, "__iter__") or hasattr(stream, "__next__")
+    # 消耗前几个 token
+    try:
+        first_chunk = next(stream)
+        assert isinstance(first_chunk, str)
+        assert len(first_chunk) > 0
+    except StopIteration:
+        pass  # 可能返回空（正常）
+
+
+def test_glm_client_generate_image():
+    """文生图应返回图片 URL。"""
+    client = GLMClient()
+    response = client.generate_image(
+        model="cogview-3",
+        prompt="可爱的动漫女孩，温柔体贴，高清",
+    )
+    assert "url" in response
+    assert isinstance(response["url"], str)
+    assert len(response["url"]) > 0
+
+
+def test_glm_client_handles_api_error():
+    """API 错误应抛出 GLMClientError。"""
+    client = GLMClient()
+    try:
+        # 用无效 prompt 触发错误（或 mock）
+        client.chat(model="glm-4-flash", messages=[{"role": "user", "content": ""}])
+        assert False, "Expected GLMClientError"
+    except GLMClientError as e:
+        assert "API error" in str(e) or "status" in str(e)

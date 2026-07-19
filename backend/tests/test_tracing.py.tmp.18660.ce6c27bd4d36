@@ -1,0 +1,13 @@
+import pytest
+from unittest.mock import Mock
+from app.middleware.tracing import PerformanceTracer
+
+def test_tracer_measures_request_time():
+    tracer = PerformanceTracer()
+    with tracer.measure("chat_request"):
+        import time
+        time.sleep(0.1)
+
+    metrics = tracer.get_metrics()
+    assert "chat_request" in metrics
+    assert metrics["chat_request"][0]["duration"] > 0.05

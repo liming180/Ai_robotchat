@@ -1,0 +1,1 @@
+import type { Note } from './index'
