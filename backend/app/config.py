@@ -20,24 +20,24 @@ class Settings(BaseSettings):
     app_debug: bool = True
 
     # Database
-    database_url: str
+    database_url: str = "sqlite:///./ai_companion.db"
 
     # Redis
-    redis_url: str
+    redis_url: str = "redis://localhost:6379/1"
 
     # JWT
-    jwt_secret_key: str
+    jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 120
     jwt_refresh_token_expire_days: int = 7
 
     # GLM API
-    glm_api_key: str
+    glm_api_key: str = ""
     glm_api_url: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
     glm_model: str = "GLM-4.5-Air"
 
     # CORS
-    cors_origins: str
+    cors_origins: str = "*"
 
     @property
     def cors_origins_list(self) -> List[str]:

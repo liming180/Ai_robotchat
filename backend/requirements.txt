@@ -1,0 +1,22 @@
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-dotenv>=1.0.0
+httpx>=0.25.0
+redis>=5.0.0
+sqlalchemy>=2.0.0
+pydantic-settings>=2.0.0
+
+# LangChain 相关
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.10
+chromadb>=0.4.0
+
+# 智谱AI
+zhipuai>=2.0.0
+
+# 数据库驱动（按需安装一个即可）
+# PostgreSQL: pip install psycopg2-binary
+# MySQL:      pip install pymysql
+# SQLite:     Python 内置，无需额外安装
+psycopg2-binary>=2.9.0

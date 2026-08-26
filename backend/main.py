@@ -81,6 +81,20 @@ except ImportError:
     print("ZhipuAI SDK not installed, will use fallback responses")
 
 
+# 初始化 LangChain 客户端
+langchain_client = None
+try:
+    from app.ai.langchain_client import LangChainGLMClient
+    if ZHIPU_API_KEY:
+        try:
+            langchain_client = LangChainGLMClient()
+            print(f"Successfully initialized LangChain client with model: {ZHIPU_MODEL}")
+        except Exception as e:
+            print(f"Failed to initialize LangChain client: {e}")
+except ImportError as e:
+    print(f"LangChain not installed: {e}")
+
+
 # 知识库
 KNOWLEDGE_BASE = [
     {
@@ -147,6 +161,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage] = []
     userMessage: str
     images: Optional[List[str]] = None  # base64 data URLs for current turn
+    userId: Optional[str] = None  # 用户ID，用于记忆查询
 
 
 class SuggestionsRequest(BaseModel):
@@ -581,12 +596,286 @@ async def generate_avatar(request: AvatarRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── LangChain 增强接口 ──────────────────────────────────────────────
+
+@app.post("/api/v1/ai/chat/langchain", tags=["AI", "LangChain"])
+async def chat_langchain(request: ChatRequest):
+    """使用 LangChain + Function Calling 增强的聊天接口"""
+    try:
+        with tracer.measure("chat_langchain"):
+            personality = _extract_personality(request.systemPrompt)
+            
+            # 格式化历史消息
+            history = []
+            for m in request.messages:
+                role = _normalize_role(m.role)
+                if role:
+                    history.append({
+                        "role": role,
+                        "content": m.content
+                    })
+            
+            # 优先使用 LangChain
+            if langchain_client:
+                try:
+                    result = langchain_client.chat(
+                        user_input=request.userMessage,
+                        chat_history=history,
+                        personality=personality,
+                        user_id=request.userId
+                    )
+                    return APIResponse(
+                        success=True,
+                        message="Chat generated successfully (LangChain)",
+                        data={"content": result["content"], "engine": "langchain"},
+                        timestamp=datetime.utcnow().isoformat(),
+                    )
+                except Exception as e:
+                    print(f"LangChain error: {e}, falling back to original")
+            
+            # 降级到原始方法
+            ai_response = generate_smart_response(
+                request.userMessage,
+                request.systemPrompt,
+                request.messages,
+                images=request.images,
+            )
+            return APIResponse(
+                success=True,
+                message="Chat generated successfully (Fallback)",
+                data={"content": ai_response, "engine": "fallback"},
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ai/chat/langchain/stream", tags=["AI", "LangChain"])
+async def chat_langchain_stream(request: ChatRequest):
+    """LangChain 流式接口 - 支持 Function Calling 的流式聊天"""
+    
+    async def generate():
+        try:
+            personality = _extract_personality(request.systemPrompt)
+            
+            # 格式化历史消息
+            history = []
+            for m in request.messages:
+                role = _normalize_role(m.role)
+                if role:
+                    history.append({
+                        "role": role,
+                        "content": m.content
+                    })
+            
+            if langchain_client:
+                try:
+                    async for chunk in langchain_client.chat_stream(
+                        user_input=request.userMessage,
+                        chat_history=history,
+                        personality=personality,
+                        user_id=request.userId
+                    ):
+                        data = json.dumps({"delta": chunk, "done": False}, ensure_ascii=False)
+                        yield f"data: {data}\n\n"
+                    
+                    yield f"data: {json.dumps({'delta': '', 'done': True})}\n\n"
+                    return
+                except Exception as e:
+                    print(f"LangChain stream error: {e}, falling back")
+            
+            # 降级到原始流式方法
+            async for sse_chunk in stream_smart_response(
+                request.userMessage,
+                request.systemPrompt,
+                request.messages,
+                request.images
+            ):
+                yield sse_chunk
+        
+        except Exception as e:
+            print(f"Stream error: {e}")
+            # 终极降级
+            fallback = random.choice(PRESET_RESPONSES.get(personality, PRESET_RESPONSES["温柔体贴"]))
+            for char in fallback:
+                data = json.dumps({"delta": char, "done": False}, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+                await asyncio.sleep(0.02)
+            yield f"data: {json.dumps({'delta': '', 'done': True})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── 记忆与心情管理接口 ──────────────────────────────────────────────
+
+class MemoryCreateRequest(BaseModel):
+    userId: str
+    memoryType: str = "fact"
+    keyword: Optional[str] = None
+    content: str
+
+
+class MoodCreateRequest(BaseModel):
+    userId: str
+    mood: str
+    score: float = 5.0
+    note: Optional[str] = None
+
+
+@app.get("/api/v1/memory/{user_id}", tags=["Memory"])
+async def get_user_memory(user_id: str, keyword: Optional[str] = None):
+    """查询用户记忆"""
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MemoryService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MemoryService(db)
+            memories = service.search_user_memory(user_id, keyword or "")
+            return APIResponse(
+                success=True,
+                message="Memory retrieved",
+                data={
+                    "memories": [
+                        {
+                            "id": m.id,
+                            "userId": m.user_id,
+                            "type": m.memory_type,
+                            "keyword": m.keyword,
+                            "content": m.content,
+                            "createdAt": m.created_at.isoformat() if m.created_at else None,
+                        }
+                        for m in memories
+                    ]
+                },
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/memory", tags=["Memory"])
+async def create_memory(request: MemoryCreateRequest):
+    """添加用户记忆"""
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MemoryService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MemoryService(db)
+            keyword = request.keyword or (request.content[:20] if len(request.content) <= 20 else request.content[:20] + "...")
+            memory = service.add_user_memory(
+                user_id=request.userId,
+                memory_type=request.memoryType,
+                keyword=keyword,
+                content=request.content,
+            )
+            return APIResponse(
+                success=True,
+                message="Memory added",
+                data={
+                    "id": memory.id,
+                    "userId": memory.user_id,
+                    "type": memory.memory_type,
+                    "keyword": memory.keyword,
+                    "content": memory.content,
+                    "createdAt": memory.created_at.isoformat() if memory.created_at else None,
+                },
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/mood/{user_id}", tags=["Mood"])
+async def get_user_mood(user_id: str, days: int = 7):
+    """查询用户心情历史"""
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MoodService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MoodService(db)
+            moods = service.get_mood_history(user_id, days)
+            return APIResponse(
+                success=True,
+                message="Mood history retrieved",
+                data={
+                    "moods": [
+                        {
+                            "id": m.id,
+                            "userId": m.user_id,
+                            "mood": m.mood,
+                            "score": m.score,
+                            "note": m.note,
+                            "createdAt": m.created_at.isoformat() if m.created_at else None,
+                        }
+                        for m in moods
+                    ]
+                },
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/mood", tags=["Mood"])
+async def create_mood(request: MoodCreateRequest):
+    """记录用户心情"""
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MoodService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MoodService(db)
+            mood = service.add_user_mood(
+                user_id=request.userId,
+                mood=request.mood,
+                score=request.score,
+                note=request.note,
+            )
+            return APIResponse(
+                success=True,
+                message="Mood recorded",
+                data={
+                    "id": mood.id,
+                    "userId": mood.user_id,
+                    "mood": mood.mood,
+                    "score": mood.score,
+                    "note": mood.note,
+                    "createdAt": mood.created_at.isoformat() if mood.created_at else None,
+                },
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     host = os.getenv("APP_HOST", "0.0.0.0")
     port = int(os.getenv("APP_PORT", 5000))
     debug = os.getenv("APP_DEBUG", "true").lower() == "true"
-    
+
     uvicorn.run(
         "main:app",
         host=host,
