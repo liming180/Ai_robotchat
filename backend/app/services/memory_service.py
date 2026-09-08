@@ -15,16 +15,20 @@ class MemoryService:
     
     def search_user_memory(self, user_id: str, keyword: str) -> List[UserMemory]:
         """搜索用户记忆"""
-        memories = self.db.query(UserMemory).filter(
-            UserMemory.user_id == user_id,
-            UserMemory.keyword.ilike(f"%{keyword}%")
-        ).all()
-        
-        # 如果没找到，返回一些示例数据（演示用）
-        if not memories:
+        try:
+            memories = self.db.query(UserMemory).filter(
+                UserMemory.user_id == user_id,
+                UserMemory.keyword.ilike(f"%{keyword}%")
+            ).all()
+
+            # 如果没找到，返回一些示例数据（演示用）
+            if not memories:
+                return self._get_sample_memories(user_id, keyword)
+
+            return memories
+        except Exception as e:
+            print(f"[MemoryService] 查询记忆失败: {e}")
             return self._get_sample_memories(user_id, keyword)
-        
-        return memories
     
     def _get_sample_memories(self, user_id: str, keyword: str) -> List[UserMemory]:
         """获取示例记忆数据（演示用）"""
@@ -74,17 +78,21 @@ class MoodService:
     
     def get_mood_history(self, user_id: str, days: int = 7) -> List[UserMood]:
         """获取用户最近的心情历史"""
-        cutoff_date = datetime.now() - timedelta(days=days)
-        moods = self.db.query(UserMood).filter(
-            UserMood.user_id == user_id,
-            UserMood.created_at >= cutoff_date
-        ).order_by(UserMood.created_at.desc()).all()
-        
-        # 如果没有数据，返回示例数据（演示用）
-        if not moods:
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            moods = self.db.query(UserMood).filter(
+                UserMood.user_id == user_id,
+                UserMood.created_at >= cutoff_date
+            ).order_by(UserMood.created_at.desc()).all()
+
+            # 如果没有数据，返回示例数据（演示用）
+            if not moods:
+                return self._get_sample_moods(user_id, days)
+
+            return moods
+        except Exception as e:
+            print(f"[MoodService] 查询心情历史失败: {e}")
             return self._get_sample_moods(user_id, days)
-        
-        return moods
     
     def _get_sample_moods(self, user_id: str, days: int) -> List[UserMood]:
         """获取示例心情数据（演示用）"""

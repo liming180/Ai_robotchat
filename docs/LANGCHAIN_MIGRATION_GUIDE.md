@@ -19,6 +19,7 @@ pip install -r requirements.txt
 ```
 
 新增的主要依赖：
+
 - `langchain` - 核心框架
 - `langchain-openai` - OpenAI 兼容接口（适配智谱 GLM）
 - `langchain-community` - 社区工具集成
@@ -55,6 +56,7 @@ python main.py
 ```
 
 启动成功后，你会看到：
+
 ```
 Successfully initialized Zhipu AI client...
 Successfully initialized LangChain client...
@@ -64,27 +66,30 @@ Successfully initialized LangChain client...
 
 ### 原有接口（保持不变）
 
-| 接口 | 说明 |
-|------|------|
-| `POST /api/v1/ai/chat` | 普通聊天接口 |
-| `POST /api/v1/ai/chat/stream` | 流式聊天接口 |
+
+| 接口                              | 说明         |
+| --------------------------------- | ------------ |
+| `POST /api/v1/ai/chat`            | 普通聊天接口 |
+| `POST /api/v1/ai/chat/stream`     | 流式聊天接口 |
 | `POST /api/v1/ai/generate-avatar` | 头像生成接口 |
 
 ### 新增 LangChain 接口
 
-| 接口 | 说明 |
-|------|------|
-| `POST /api/v1/ai/chat/langchain` | LangChain 聊天（支持 Function Calling） |
-| `POST /api/v1/ai/chat/langchain/stream` | LangChain 流式聊天 |
+
+| 接口                                    | 说明                                    |
+| --------------------------------------- | --------------------------------------- |
+| `POST /api/v1/ai/chat/langchain`        | LangChain 聊天（支持 Function Calling） |
+| `POST /api/v1/ai/chat/langchain/stream` | LangChain 流式聊天                      |
 
 ### 新增 记忆与心情管理接口
 
-| 接口 | 说明 |
-|------|------|
-| `GET /api/v1/memory/{user_id}` | 查询用户记忆（可选 `?keyword=` 过滤） |
-| `POST /api/v1/memory` | 添加用户记忆 |
-| `GET /api/v1/mood/{user_id}` | 查询心情历史（可选 `?days=7`） |
-| `POST /api/v1/mood` | 记录用户心情 |
+
+| 接口                           | 说明                                 |
+| ------------------------------ | ------------------------------------ |
+| `GET /api/v1/memory/{user_id}` | 查询用户记忆（可选`?keyword=` 过滤） |
+| `POST /api/v1/memory`          | 添加用户记忆                         |
+| `GET /api/v1/mood/{user_id}`   | 查询心情历史（可选`?days=7`）        |
+| `POST /api/v1/mood`            | 记录用户心情                         |
 
 > LangChain 聊天接口现在支持 `userId` 字段。传入后，AI Agent 会自动通过 Function Calling 查询该用户的记忆库和心情历史，实现"有记忆的对话"。
 
@@ -231,11 +236,12 @@ backend/
 
 ### 工具列表 (Function Calling)
 
-| 工具名称 | 功能 | 数据来源 |
-|---------|------|---------|
-| `search_user_memory(user_id, keyword)` | 搜索用户记忆库 | `user_memories` 表 |
-| `get_mood_history(user_id, days)` | 获取用户心情历史 | `user_moods` 表 |
-| `add_user_memory(user_id, memory_type, content)` | 添加用户记忆 | 写入 `user_memories` 表 |
+
+| 工具名称                                         | 功能             | 数据来源               |
+| ------------------------------------------------ | ---------------- | ---------------------- |
+| `search_user_memory(user_id, keyword)`           | 搜索用户记忆库   | `user_memories` 表     |
+| `get_mood_history(user_id, days)`                | 获取用户心情历史 | `user_moods` 表        |
+| `add_user_memory(user_id, memory_type, content)` | 添加用户记忆     | 写入`user_memories` 表 |
 
 > ✅ 工具已对接真实数据库（通过 `MemoryService` / `MoodService`）。当数据库不可用时，工具会优雅降级返回提示，不影响对话进行。
 
@@ -295,6 +301,7 @@ def search_user_memory(user_id: str, keyword: str) -> str:
 ```
 
 这种设计的好处：
+
 - **惰性导入**：数据库依赖在工具调用时才加载，服务启动不依赖数据库
 - **优雅降级**：数据库不可用时工具返回提示文本，AI 仍能正常对话
 - **请求隔离**：每次调用创建独立 session，避免并发问题
@@ -346,12 +353,12 @@ LANGCHAIN_PROJECT=ai-companion
 
 ## ✅ 验证清单
 
-- [x] 服务正常启动，无报错（数据库未配置时也能启动，仅记忆功能不可用）
-- [x] 看到 LangChain 初始化成功日志
-- [ ] 普通聊天接口返回正常
-- [ ] Function Calling 触发成功（需配置 DATABASE_URL 并运行 `init_db.py`）
-- [ ] 流式接口逐字返回
-- [ ] 降级机制工作正常
+- [X]  服务正常启动，无报错（数据库未配置时也能启动，仅记忆功能不可用）
+- [X]  看到 LangChain 初始化成功日志
+- [ ]  普通聊天接口返回正常
+- [ ]  Function Calling 触发成功（需配置 DATABASE_URL 并运行 `init_db.py`）
+- [ ]  流式接口逐字返回
+- [ ]  降级机制工作正常
 
 ## 📝 注意事项
 

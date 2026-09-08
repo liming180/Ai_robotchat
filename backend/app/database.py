@@ -10,11 +10,19 @@ from app.config import settings
 # Create SQLAlchemy engine
 # 如果 database_url 无效，engine 设为 None，避免服务启动崩溃
 try:
-    engine = create_engine(
-        settings.database_url,
-        pool_pre_ping=True,
-        echo=settings.app_debug
-    )
+    # SQLite 配置特殊处理
+    if settings.database_url.startswith("sqlite"):
+        engine = create_engine(
+            settings.database_url,
+            echo=settings.app_debug
+        )
+    else:
+        engine = create_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            echo=settings.app_debug
+        )
+
     # 测试连接
     with engine.connect() as conn:
         pass
