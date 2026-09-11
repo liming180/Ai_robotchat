@@ -35,3 +35,8 @@ wheels/
 
 # Logs
 *.log
+
+# Runtime data (local only)
+ai_companion.db
+*.db-journal
+chroma_db/

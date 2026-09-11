@@ -63,3 +63,20 @@ target/
 *.tmp
 *.swp
 *~
+
+# Environment variables (SECRETS - NEVER COMMIT!)
+.env
+.env.local
+.env.*.local
+
+# Config files with secrets
+*.env
+*.env.*
+# runtime artifacts
+chroma_db/
+.tmppip/
+.tmp/
+
+# Runtime data (local only)
+ai_companion.db
+*.db-journal

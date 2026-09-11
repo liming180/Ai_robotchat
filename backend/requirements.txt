@@ -7,10 +7,15 @@ sqlalchemy>=2.0.0
 pydantic-settings>=2.0.0
 
 # LangChain 相关
-langchain>=0.1.0
-langchain-openai>=0.0.5
-langchain-community>=0.0.10
+langchain>=1.0.0
+langchain-openai>=0.3.0
+langchain-community>=0.3.0
+langchain-chroma>=0.2.0
+langchain-text-splitters>=0.3.0
 chromadb>=0.4.0
+
+# 联网搜索工具（web_search 依赖）
+ddgs>=9.0.0
 
 # 智谱AI
 zhipuai>=2.0.0

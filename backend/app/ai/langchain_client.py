@@ -1,61 +1,62 @@
 """
-LangChain 封装的 GLM 客户端
-支持 Function Calling 和流式响应
+LangChain ??? GLM ???
+?? Function Calling???????RAG ?????????
+
+???????????
+1. ?? chat() ?? prompt | self.llm?tools ???????? LLM?
+   ?????????"??????"???????????? -> ???
+2. ???? LangChain 1.x ? create_agent() ????????? Agent?
+   tools ??????????????????????????
+3. ?? RAG ???? search_knowledge???????????
+4. ?? chat() / chat_stream() ????????????????
 """
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
-# 暂时移除复杂的Agent，改用简单实现
-# from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_community.tools import DuckDuckGoSearchRun
+
+# LangChain 1.x?AgentExecutor / create_tool_calling_agent ?????? create_agent
+from langchain.agents import create_agent
+
+# ????????????????????
+try:
+    from langchain_community.tools import DuckDuckGoSearchRun
+    _WEB_SEARCH_AVAILABLE = True
+except Exception:
+    DuckDuckGoSearchRun = None
+    _WEB_SEARCH_AVAILABLE = False
 
 from app.ai.prompts import build_system_prompt
 
 
 class NaturalLanguageOutputParser:
-    """将输出解析为自然语言，移除Markdown格式"""
+    """????????????? Markdown ??"""
 
     @staticmethod
     def parse(text: str) -> str:
-        """移除Markdown格式，转换为自然语言"""
-        # 移除Markdown代码块
+        """?? Markdown ??????????"""
+        if not text:
+            return ""
         text = text.replace("```", "").replace("``", "")
 
-        # 移除可能的XML标记
         import re
-        text = re.sub(r'<[^>]+>', '', text)
+        text = re.sub(r"<[^>]+>", "", text)
 
-        # 移除Markdown标题
         lines = text.split("\n")
         processed_lines = []
         for line in lines:
-            # 处理可能的格式化文本
             line = line.strip()
-
             if not line:
                 processed_lines.append("")
                 continue
-
-            # 移除开头的#符号
             if line.startswith("#"):
                 line = line.replace("#", "").strip()
-
-            # 移除开头的标记符号
-            while line.startswith(("*", "•", "-", "+")):
+            while line.startswith(("*", "?", "-", "+")):
                 line = line[1:].strip()
-
-            # 移除行内格式标记
-            line = line.replace("*", "").replace("**", "").replace("_", "")
-
-            # 如果处理后的内容不为空，添加到结果
+            line = line.replace("**", "").replace("*", "").replace("_", "")
             if line:
                 processed_lines.append(line)
 
-        # 合并连续的空行
         result = []
         for line in processed_lines:
             if line.strip() == "":
@@ -68,23 +69,14 @@ class NaturalLanguageOutputParser:
 
 
 def create_glm_llm():
-    """
-    独立的智谱 GLM LLM 实例创建方法
-
-    封装所有配置逻辑，减少失误，便于维护
-
-    Returns:
-        ChatOpenAI: 已配置好的 LLM 实例
-    """
+    """???? GLM ? LLM ???OpenAI ?????"""
     from app.ai.config import ZhipuAIConfig
     config = ZhipuAIConfig()
 
-    # 验证配置
     if not config.is_valid():
-        raise ValueError("智谱 API 配置无效：API_KEY 未设置")
+        raise ValueError("?? API ?????API_KEY ???")
 
-    # 创建兼容 OpenAI 格式的 LLM
-    llm = ChatOpenAI(
+    return ChatOpenAI(
         model=config.MODEL,
         api_key=config.API_KEY,
         base_url=config.BASE_URL,
@@ -93,288 +85,284 @@ def create_glm_llm():
         top_p=config.TOP_P,
     )
 
-    return llm
-
 
 class LangChainGLMClient:
-    """使用 LangChain 封装的智谱 GLM 客户端"""
+    """?? LangChain ????? GLM ?????? Function Calling + RAG?"""
 
     def __init__(self):
-        # 获取配置
         from app.ai.config import ZhipuAIConfig
         self.config = ZhipuAIConfig()
 
-        # 初始化 LangChain ChatOpenAI (使用独立的配置方法)
         self.llm = create_glm_llm()
-
-        # 初始化工具
         self.tools = self._init_tools()
 
-        # 构建提示词模板
-        self.prompt = self._build_prompt_template()
+        # ???????????? Agent?tools ???????????
+        self.agent = create_agent(
+            model=self.llm,
+            tools=self.tools,
+            system_prompt=build_system_prompt(),
+        )
+        print("[LangChain] Agent ready, tools: " + str([t.name for t in self.tools]))
 
     def _init_tools(self) -> List[Any]:
-        """初始化工具函数 (Function Calling)"""
+        """????????Function Calling?"""
+        tools: List[Any] = []
 
-        # 联网搜索工具
-        search_tool = DuckDuckGoSearchRun(
-            name="web_search",
-            description="搜索最新的网络信息，用于回答实时性问题、新闻、事件等"
-        )
+        if _WEB_SEARCH_AVAILABLE:
+            try:
+                tools.append(
+                    DuckDuckGoSearchRun(
+                        name="web_search",
+                        description="?????????????????????????????",
+                    )
+                )
+            except Exception as e:
+                print("[LangChain] web_search init failed: " + str(e))
 
         @tool
         def search_user_memory(user_id: str, keyword: str) -> str:
-            """
-            搜索用户的记忆库
+            """???????????? + ???????
 
             Args:
-                user_id: 用户ID
-                keyword: 搜索关键词
+                user_id: ??ID
+                keyword: ?????
 
             Returns:
-                相关的记忆内容，格式化为自然语言描述
+                ?????????????????
             """
+            results: List[str] = []
+
             try:
-                # 惰性导入数据库依赖，避免初始化时崩溃
                 from app.database import SessionLocal
                 from app.services.memory_service import MemoryService
 
-                # 检查数据库连接
-                if SessionLocal is None:
-                    return "抱歉，记忆系统暂时不可用（数据库未配置），但我可以基于对话内容回答您的问题。"
-
-                with SessionLocal() as db:
-                    service = MemoryService(db)
-                    memories = service.search_user_memory(user_id, keyword)
-
-                    if not memories:
-                        return f"抱歉，我没有找到关于「{keyword}」的记忆。如果您希望我记住这个信息，请告诉我。"
-
-                    # 将结果转换为自然语言描述
-                    if len(memories) == 1:
-                        memory = memories[0]
-                        return f"我记得用户的一条关于「{memory.keyword}」的记忆：{memory.content}"
-                    else:
-                        result = f"我找到了{len(memories)}条关于「{keyword}」的记忆：\n"
-                        for i, memory in enumerate(memories, 1):
-                            result += f"{i}. {memory.keyword}：{memory.content}\n"
-                        return result.strip()
+                if SessionLocal is not None:
+                    with SessionLocal() as db:
+                        memories = MemoryService(db).search_user_memory(user_id, keyword)
+                        for m in memories or []:
+                            results.append(str(m.keyword) + "?" + str(m.content))
             except Exception as e:
-                print(f"[search_user_memory] 数据库查询失败: {e}")
-                # 降级返回：让AI知道记忆系统暂时不可用
-                return f"抱歉，记忆系统暂时不可用（{str(e)}），但我可以基于对话内容回答您的问题。"
+                print("[search_user_memory] db failed: " + str(e))
+
+            try:
+                from app.ai.rag import get_rag_store
+                store = get_rag_store()
+                if store is not None:
+                    docs = store.search(keyword, user_id=user_id, k=3)
+                    for d in docs:
+                        text = d.page_content.strip()
+                        if text and text not in results:
+                            results.append(text)
+            except Exception as e:
+                print("[search_user_memory] rag failed: " + str(e))
+
+            if not results:
+                return "???????" + keyword + "?????"
+            return "?".join(results)
+
+        tools.append(search_user_memory)
 
         @tool
         def get_mood_history(user_id: str, days: int = 7) -> str:
-            """
-            获取用户最近的心情历史
+            """????????????
 
             Args:
-                user_id: 用户ID
-                days: 查询最近几天，默认7天
+                user_id: ??ID
+                days: ?????????7?
 
             Returns:
-                心情历史记录，格式化为自然语言描述
+                ????????????????
             """
             try:
                 from app.database import SessionLocal
                 from app.services.memory_service import MoodService
 
-                # 检查数据库连接
                 if SessionLocal is None:
-                    return "抱歉，心情历史暂时不可用（数据库未配置），但我可以和您聊聊现在的心情。"
+                    return "??????????????????"
 
                 with SessionLocal() as db:
-                    service = MoodService(db)
-                    moods = service.get_mood_history(user_id, days)
-
+                    moods = MoodService(db).get_mood_history(user_id, days)
                     if not moods:
-                        return f"用户 {user_id} 最近 {days} 天没有心情记录。"
-
-                    # 将结果转换为自然语言描述
-                    if len(moods) == 1:
-                        mood = moods[0]
-                        date_str = mood.created_at.strftime("%m-%d") if mood.created_at else "最近"
-                        return f"用户在{date_str}的心情是{mood.mood}，心情分数{mood.score}分。{mood.note or ''}"
-                    else:
-                        result = f"用户最近{days}天的心情变化如下：\n"
-                        for mood in moods:
-                            date_str = mood.created_at.strftime("%m-%d") if mood.created_at else "未知日期"
-                            result += f"• {date_str}: {mood.mood}（分数{mood.score}）{mood.note or ''}\n"
-                        return result.strip()
+                        return "??" + str(days) + "????????"
+                    parts = []
+                    for m in moods:
+                        s = str(m.mood) + "?" + str(m.score) + "??"
+                        if m.note:
+                            s += "?" + str(m.note)
+                        parts.append(s)
+                    return "?".join(parts)
             except Exception as e:
-                print(f"[get_mood_history] 数据库查询失败: {e}")
-                return f"抱歉，心情历史暂时无法获取（{str(e)}），但我们可以聊聊现在的心情。"
+                print("[get_mood_history] failed: " + str(e))
+                return "??????????"
+
+        tools.append(get_mood_history)
 
         @tool
         def add_user_memory(user_id: str, memory_type: str, content: str) -> str:
-            """
-            添加新的用户记忆
+            """???????????????
 
             Args:
-                user_id: 用户ID
-                memory_type: 记忆类型 (preference/重要日期/习惯/fact等)
-                content: 记忆内容
+                user_id: ??ID
+                memory_type: ?????fact / preference / birthday ??
+                content: ??????
 
             Returns:
-                操作结果，格式化为自然语言描述
+                ??????
             """
+            keyword = content[:20]
+            ok_db = False
+            ok_rag = False
+
             try:
                 from app.database import SessionLocal
                 from app.services.memory_service import MemoryService
 
-                # 检查数据库连接
-                if SessionLocal is None:
-                    return "抱歉，记忆记录失败（数据库未配置），但我已经把您的话记在心里了。"
-
-                with SessionLocal() as db:
-                    service = MemoryService(db)
-                    # keyword 从 content 中提取前20字作为关键词
-                    keyword = content[:20] if len(content) <= 20 else content[:20] + "..."
-                    memory = service.add_user_memory(
-                        user_id=user_id,
-                        memory_type=memory_type,
-                        keyword=keyword,
-                        content=content
-                    )
-                    # 返回更友好的确认消息
-                    return f"好的，我已经记住了：'{memory.content}'。这是属于{memory_type}类型的记忆。"
+                if SessionLocal is not None:
+                    with SessionLocal() as db:
+                        MemoryService(db).add_user_memory(
+                            user_id=user_id,
+                            memory_type=memory_type,
+                            keyword=keyword,
+                            content=content,
+                        )
+                        ok_db = True
             except Exception as e:
-                print(f"[add_user_memory] 数据库写入失败: {e}")
-                return f"抱歉，记忆记录失败了（{str(e)}），但我已经把您的话记在心里了。"
+                print("[add_user_memory] db failed: " + str(e))
 
-        return [search_tool, search_user_memory, get_mood_history, add_user_memory]
+            try:
+                from app.ai.rag import get_rag_store
+                store = get_rag_store()
+                if store is not None:
+                    store.add_memory(user_id=user_id, content=content, memory_type=memory_type)
+                    ok_rag = True
+            except Exception as e:
+                print("[add_user_memory] rag failed: " + str(e))
 
-    def _build_prompt_template(self) -> ChatPromptTemplate:
-        """构建提示词模板"""
-        system_prompt = build_system_prompt()
+            if ok_db or ok_rag:
+                return "??????" + content
+            return "??????????????????????"
 
-        return ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("user", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        tools.append(add_user_memory)
+
+        @tool
+        def search_knowledge(query: str) -> str:
+            """????????????RAG ??????
+
+            ??????????????????????????
+
+            Args:
+                query: ????
+
+            Returns:
+                ????????
+            """
+            try:
+                from app.ai.rag import get_rag_store
+                store = get_rag_store()
+                if store is None:
+                    return "????????"
+                docs = store.search(query, k=4)
+                if not docs:
+                    return "?????????????"
+                return "\n".join(d.page_content.strip() for d in docs if d.page_content.strip())
+            except Exception as e:
+                print("[search_knowledge] failed: " + str(e))
+                return "????????"
+
+        tools.append(search_knowledge)
+
+        return tools
+
+    def _build_messages(
+        self,
+        user_input: str,
+        chat_history: Optional[List[Dict]] = None,
+        user_id: Optional[str] = None,
+    ) -> List[Any]:
+        """??? chat_history ????? LangChain ????"""
+        messages: List[Any] = []
+
+        for msg in (chat_history or [])[-12:]:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if not content:
+                continue
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role in ("assistant", "ai"):
+                messages.append(AIMessage(content=content))
+
+        text = user_input
+        if user_id:
+            text = "[????ID: " + user_id + "]\n" + user_input
+
+        messages.append(HumanMessage(content=text))
+        return messages
+
+    @staticmethod
+    def _extract_content(result: Any) -> str:
+        """? Agent ?????????????"""
+        if isinstance(result, dict):
+            msgs = result.get("messages", [])
+            for m in reversed(msgs):
+                if isinstance(m, AIMessage):
+                    content = m.content
+                    if isinstance(content, list):
+                        parts = []
+                        for c in content:
+                            if isinstance(c, dict) and c.get("type") == "text":
+                                parts.append(c.get("text", ""))
+                            elif isinstance(c, str):
+                                parts.append(c)
+                        content = "".join(parts)
+                    if content and str(content).strip():
+                        return str(content)
+        return str(result)
 
     def chat(
         self,
         user_input: str,
         chat_history: Optional[List[Dict]] = None,
-        personality: str = "温柔体贴",
-        user_id: Optional[str] = None
+        personality: str = "????",
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        普通聊天对话（非流式）
-
-        Args:
-            user_input: 用户输入
-            chat_history: 聊天历史
-            personality: AI 性格
-            user_id: 用户ID（用于记忆查询）
-
-        Returns:
-            AI 回复结果
-        """
+        """??????????? Function Calling?"""
         try:
-            # 格式化聊天历史
-            history_messages = self._format_chat_history(chat_history)
-
-            # 构建输入
-            input_text = user_input
-            if user_id:
-                input_text = f"[用户ID: {user_id}] {user_input}"
-
-            # 构建提示
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", build_system_prompt()),
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("user", input_text)
-            ])
-
-            # 创建链并执行
-            chain = prompt | self.llm
-            result = chain.invoke({
-                "input": input_text,
-                "chat_history": history_messages
-            })
-
-            # 使用输出解析器将Markdown转换为自然语言
-            parsed_content = NaturalLanguageOutputParser.parse(result.content)
-
+            messages = self._build_messages(user_input, chat_history, user_id)
+            result = self.agent.invoke({"messages": messages})
+            content = self._extract_content(result)
             return {
-                "content": parsed_content,
-                "model": self.config.MODEL
+                "content": NaturalLanguageOutputParser.parse(content),
+                "model": self.config.MODEL,
             }
         except Exception as e:
-            print(f"[chat] 错误: {e}")
+            print("[chat] error: " + str(e))
             return {
-                "content": f"抱歉，处理您的请求时出现了错误：{str(e)}",
-                "model": self.config.MODEL
+                "content": "????????????????" + str(e),
+                "model": self.config.MODEL,
             }
 
     async def chat_stream(
         self,
         user_input: str,
         chat_history: Optional[List[Dict]] = None,
-        personality: str = "温柔体贴",
-        user_id: Optional[str] = None
+        personality: str = "????",
+        user_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """
-        流式聊天对话
+        """??????? Function Calling?
 
-        Args:
-            user_input: 用户输入
-            chat_history: 聊天历史
-            personality: AI 性格
-            user_id: 用户ID
-
-        Yields:
-            流式返回的文本片段
+        ?? Agent ???????????????????????
+        ??????????????????
         """
         try:
-            # 格式化聊天历史
-            history_messages = self._format_chat_history(chat_history)
+            messages = self._build_messages(user_input, chat_history, user_id)
+            result = await self.agent.ainvoke({"messages": messages})
+            content = self._extract_content(result)
+            parsed = NaturalLanguageOutputParser.parse(content)
 
-            # 构建输入
-            input_text = user_input
-            if user_id:
-                input_text = f"[用户ID: {user_id}] {user_input}"
-
-            # 构建提示
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", build_system_prompt()),
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("user", input_text)
-            ])
-
-            # 创建流式链
-            chain = prompt | self.llm | StrOutputParser()
-
-            async for chunk in chain.astream({
-                "input": input_text,
-                "chat_history": history_messages
-            }):
-                # 对每个chunk进行解析，去除Markdown格式
-                parsed_chunk = NaturalLanguageOutputParser.parse(chunk)
-                yield parsed_chunk
-
+            step = 8
+            for i in range(0, len(parsed), step):
+                yield parsed[i:i + step]
         except Exception as e:
-            print(f"[chat_stream] 错误: {e}")
-            yield f"抱歉，流式处理时出现了错误：{str(e)}"
-
-    def _format_chat_history(self, chat_history: Optional[List[Dict]]) -> List:
-        """格式化聊天历史为 LangChain 消息格式"""
-        if not chat_history:
-            return []
-
-        messages = []
-        for msg in chat_history[-12:]:  # 保留最近12条
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-
-            if role == "user":
-                messages.append(HumanMessage(content=content))
-            elif role in ("assistant", "ai"):
-                messages.append(AIMessage(content=content))
-
-        return messages
+            print("[chat_stream] error: " + str(e))
+            yield "??????????????" + str(e)

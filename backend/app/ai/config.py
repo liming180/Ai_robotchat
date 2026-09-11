@@ -9,7 +9,7 @@ from dataclasses import dataclass
 @dataclass
 class ZhipuAIConfig:
     """智谱 AI 配置类"""
-    API_KEY: str = "4545b9e1adec45c08b53481a5a89759f.gXcXow7j1SmbmbcZ"
+    API_KEY: str = ""  # 从环境变量 ZHIPU_API_KEY 读取，禁止硬编码
     BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
     MODEL: str = "glm-4.5-air"
     VISION_MODEL: str = "glm-4v-flash"
@@ -18,10 +18,34 @@ class ZhipuAIConfig:
     MAX_TOKENS: int = 1024
     TOP_P: float = 0.9
     
+    def __post_init__(self):
+        """兜底：未显式传值时，从环境变量补齐关键配置。
+
+        这样 ZhipuAIConfig() 与 ZhipuAIConfig.from_env() 行为一致，
+        避免调用方忘记传值导致 API_KEY 为空。
+        """
+        import os as _os
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except Exception:
+            pass
+
+        if not self.API_KEY or not str(self.API_KEY).strip():
+            self.API_KEY = _os.getenv("ZHIPU_API_KEY", "").strip()
+        if _os.getenv("ZHIPU_BASE_URL"):
+            self.BASE_URL = _os.getenv("ZHIPU_BASE_URL").strip()
+        if _os.getenv("ZHIPU_MODEL"):
+            self.MODEL = _os.getenv("ZHIPU_MODEL").strip()
+        if _os.getenv("ZHIPU_VISION_MODEL"):
+            self.VISION_MODEL = _os.getenv("ZHIPU_VISION_MODEL").strip()
+        if _os.getenv("ZHIPU_IMAGE_MODEL"):
+            self.IMAGE_MODEL = _os.getenv("ZHIPU_IMAGE_MODEL").strip()
+
     @classmethod
     def from_env(cls):
-        """从环境变量加载配置"""
-        api_key = os.getenv("ZHIPU_API_KEY", "")
+        """从环境变量加载配置（env-first）"""
+        api_key = os.getenv("ZHIPU_API_KEY", "").strip()
         base_url = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
         model = os.getenv("ZHIPU_MODEL", "glm-4.5-air")
         vision_model = os.getenv("ZHIPU_VISION_MODEL", "glm-4v-flash")
