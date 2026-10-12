@@ -31,11 +31,6 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 120
     jwt_refresh_token_expire_days: int = 7
 
-    # GLM API
-    glm_api_key: str = ""
-    glm_api_url: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-    glm_model: str = "GLM-4.5-Air"
-
     # CORS
     cors_origins: str = "*"
 

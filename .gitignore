@@ -80,3 +80,6 @@ chroma_db/
 # Runtime data (local only)
 ai_companion.db
 *.db-journal
+
+# RAG 上传的运行时文件（本地数据，不入库）
+RAG-Knowledge-System/backend/storage/uploads/
