@@ -55,19 +55,15 @@ def test_get_avatar_path_returns_correct_path():
 
 
 def test_download_and_save_avatar_handles_invalid_url():
-    """无效 URL 应抛出异常（不崩溃）。"""
+    """无效 URL 应返回 None（函数契约：失败不抛异常，见 docstring）。"""
+    # 不 mock 网络：真实调用 httpx 对非法 URL 会失败，函数捕获后返回 None
     with tempfile.TemporaryDirectory() as tmp_dir:
         avatars_dir = os.path.join(tmp_dir, "static", "avatars")
         os.makedirs(avatars_dir, exist_ok=True)
 
-        # 无效 URL
-        invalid_url = "not-a-real-url"
+        result = download_and_save_avatar("not-a-real-url", avatars_dir)
 
-        try:
-            download_and_save_avatar(invalid_url, avatars_dir)
-            assert False, "Expected exception for invalid URL"
-        except Exception:
-            pass  # 预期抛出异常
+        assert result is None, "无效 URL 应返回 None 而非抛异常或返回路径"
 
 
 def test_download_and_save_avatar_uses_given_avatars_dir(mock_http_get):
