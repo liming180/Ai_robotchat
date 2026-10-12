@@ -62,33 +62,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Zhipu AI client (with fallback)
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
-ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4.5-air")
-ZHIPU_VISION_MODEL = os.getenv("ZHIPU_VISION_MODEL", "glm-4v-flash")
-ZHIPU_IMAGE_MODEL = os.getenv("ZHIPU_IMAGE_MODEL", "cogview-3")
+# ── LLM 客户端初始化（双模型架构，均为 OpenAI 兼容协议） ──
+# 文本链路：小米 MiMo（对话 / suggestions / RAG / tool calling）
+# 视觉链路：GPTCODEX 中转站（图片理解）
+# 图像生成：LLM_IMAGE_MODEL 置空时走本地 SVG 头像降级
+LLM_MODEL_API_KEY = os.getenv("LLM_MODEL_API_KEY", "")
+LLM_MODEL_BASE_URL = os.getenv("LLM_MODEL_BASE_URL", "https://api.xiaomimimo.com/v1")
+LLM_MODEL_MODEL = os.getenv("LLM_MODEL_MODEL", "mimo-v2.6-flash")
+LLM_VISION_API_KEY = os.getenv("LLM_VISION_API_KEY", "")
+LLM_VISION_BASE_URL = os.getenv("LLM_VISION_BASE_URL", "https://gptcodex.top/v1")
+LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "gpt-6-luna")
+LLM_IMAGE_MODEL = os.getenv("LLM_IMAGE_MODEL", "")
 
-zhipu_client = None
+llm_client = None
+vision_client = None
 try:
-    from zhipuai import ZhipuAI
-    if ZHIPU_API_KEY:
+    from openai import OpenAI
+    if LLM_MODEL_API_KEY:
         try:
-            zhipu_client = ZhipuAI(api_key=ZHIPU_API_KEY)
-            print(f"Successfully initialized Zhipu AI client with model: {ZHIPU_MODEL}, image model: {ZHIPU_IMAGE_MODEL}")
+            llm_client = OpenAI(api_key=LLM_MODEL_API_KEY, base_url=LLM_MODEL_BASE_URL)
+            print(f"Successfully initialized text LLM client: {LLM_MODEL_MODEL} @ {LLM_MODEL_BASE_URL}")
         except Exception as e:
-            print(f"Failed to initialize Zhipu AI client: {e}")
-except ImportError:
-    print("ZhipuAI SDK not installed, will use fallback responses")
+            print(f"Failed to initialize text LLM client: {e}")
+    if LLM_VISION_API_KEY:
+        try:
+            vision_client = OpenAI(api_key=LLM_VISION_API_KEY, base_url=LLM_VISION_BASE_URL)
+            print(f"Successfully initialized vision LLM client: {LLM_VISION_MODEL} @ {LLM_VISION_BASE_URL}")
+        except Exception as e:
+            print(f"Failed to initialize vision LLM client: {e}")
+except ImportError as e:
+    print(f"openai SDK not installed: {e}")
+
+
+def _route_llm(images: Optional[List[str]]):
+    """按功能路由 LLM 请求：带图 → 视觉客户端；否则 → 文本客户端。
+
+    视觉链路未配置时丢弃图片并走文本链路（打印告警，保持可观测）。
+    返回 (client, model, effective_images)。
+    """
+    if images:
+        if vision_client is not None:
+            return vision_client, LLM_VISION_MODEL, images
+        print("[LLM] 图片已提供但视觉链路未配置（LLM_VISION_API_KEY 为空），本次请求忽略图片")
+        return llm_client, LLM_MODEL_MODEL, None
+    return llm_client, LLM_MODEL_MODEL, None
 
 
 # 初始化 LangChain 客户端
 langchain_client = None
 try:
     from app.ai.langchain_client import LangChainGLMClient
-    if ZHIPU_API_KEY:
+    if LLM_MODEL_API_KEY:
         try:
             langchain_client = LangChainGLMClient()
-            print(f"Successfully initialized LangChain client with model: {ZHIPU_MODEL}")
+            print(f"Successfully initialized LangChain client with model: {LLM_MODEL_MODEL}")
         except Exception as e:
             print(f"Failed to initialize LangChain client: {e}")
 except ImportError as e:
@@ -313,17 +340,18 @@ def generate_smart_response(
         if cached:
             return cached
 
-    if zhipu_client:
+    client, model, effective_images = _route_llm(images)
+    if client:
         try:
-            model = ZHIPU_VISION_MODEL if images else ZHIPU_MODEL
-            messages = _build_messages(user_message, system_prompt, history_messages, personality, images)
+            messages = _build_messages(user_message, system_prompt, history_messages, personality, effective_images)
 
-            response = zhipu_client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.72,
-                max_tokens=512,
+                max_completion_tokens=512,
                 top_p=0.9,
+                extra_body={"thinking": {"type": "disabled"}},
             )
 
             content = response.choices[0].message.content
@@ -348,18 +376,19 @@ async def stream_smart_response(
     """Yield SSE-formatted chunks. Falls back to simulated streaming if API unavailable."""
     personality = _extract_personality(system_prompt)
 
-    if zhipu_client:
+    client, model, effective_images = _route_llm(images)
+    if client:
         try:
-            model = ZHIPU_VISION_MODEL if images else ZHIPU_MODEL
-            messages = _build_messages(user_message, system_prompt, history_messages, personality, images)
+            messages = _build_messages(user_message, system_prompt, history_messages, personality, effective_images)
 
-            response = zhipu_client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.72,
-                max_tokens=512,
+                max_completion_tokens=512,
                 top_p=0.9,
                 stream=True,
+                extra_body={"thinking": {"type": "disabled"}},
             )
 
             for chunk in response:
@@ -412,9 +441,11 @@ async def health_check():
         data={
             "status": "ok",
             "timestamp": datetime.utcnow().isoformat(),
-            "zhipu_available": zhipu_client is not None,
-            "model": ZHIPU_MODEL,
-            "image_model": ZHIPU_IMAGE_MODEL
+            "llm_available": llm_client is not None,
+            "vision_available": vision_client is not None,
+            "model": LLM_MODEL_MODEL,
+            "vision_model": LLM_VISION_MODEL,
+            "image_model": LLM_IMAGE_MODEL or None
         },
         timestamp=datetime.utcnow().isoformat()
     )
@@ -474,7 +505,7 @@ async def get_suggestions(request: SuggestionsRequest):
     personality = _extract_personality(request.systemPrompt)
     default_suggestions = ["你好呀 👋", "今天过得怎么样？", "给我讲个笑话 😄", "陪我聊聊天"]
 
-    if not zhipu_client or not request.messages:
+    if not llm_client or not request.messages:
         return APIResponse(
             success=True,
             message="Suggestions generated",
@@ -497,14 +528,15 @@ async def get_suggestions(request: SuggestionsRequest):
             "对话记录：\n" + "\n".join(history_snippet)
         )
 
-        response = zhipu_client.chat.completions.create(
-            model=ZHIPU_MODEL,
+        response = llm_client.chat.completions.create(
+            model=LLM_MODEL_MODEL,
             messages=[
                 {"role": "system", "content": f"你是一个{personality}的AI伴侣对话助手。"},
                 {"role": "user", "content": prompt_text},
             ],
             temperature=0.8,
-            max_tokens=200,
+            max_completion_tokens=200,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
         raw = (response.choices[0].message.content or "").strip()
@@ -555,19 +587,18 @@ async def get_metrics():
 @app.post("/api/v1/ai/generate-avatar", tags=["AI"])
 async def generate_avatar(request: AvatarRequest):
     try:
-        # Try using Zhipu AI image model first
-        if zhipu_client:
+        # 仅当配置了远程图像模型（LLM_IMAGE_MODEL 非空）才调用；置空直接走本地 SVG 降级
+        if llm_client and LLM_IMAGE_MODEL:
             try:
-                # Generate avatar using CogView 3
                 prompt = f"可爱的动漫风格头像，{request.personality}，{request.description}，高清，高质量"
-                response = zhipu_client.images.generations.create(
-                    model=ZHIPU_IMAGE_MODEL,
+                response = llm_client.images.generations.create(
+                    model=LLM_IMAGE_MODEL,
                     prompt=prompt,
                     size="1024x1024"
                 )
                 avatar_url = response.data[0].url
-                print(f"Generated avatar using Zhipu AI image model")
-                
+                print(f"Generated avatar using remote image model: {LLM_IMAGE_MODEL}")
+
                 return APIResponse(
                     success=True,
                     message="Avatar generated successfully using AI",
@@ -577,7 +608,7 @@ async def generate_avatar(request: AvatarRequest):
                     timestamp=datetime.utcnow().isoformat()
                 )
             except Exception as e:
-                print(f"Zhipu AI image generation error: {e}, falling back to local avatar")
+                print(f"Remote image generation error: {e}, falling back to local avatar")
 
         seed = f"{request.personality}-{request.description}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         label = (request.personality or "AI").strip()[:2]

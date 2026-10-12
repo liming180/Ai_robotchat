@@ -2,41 +2,100 @@
 
 ## 概述
 
-已成功集成智谱 AI（Zhipu AI）的大语言模型，使用 `glm-4-flash` 模型作为默认模型。
+AI 服务采用**双模型架构**，按功能路由到两个 OpenAI 兼容平台：
 
-## API 密钥配置
+| 链路 | 平台 | 模型 | 承担功能 |
+| --- | --- | --- | --- |
+| 文本链路 | 小米 MiMo | `mimo-v2.6-flash` | 对话、快捷建议、RAG、Function Calling |
+| 视觉链路 | GPTCODEX 中转站 | `gpt-6-luna` | 图片理解（多模态） |
+| 图像生成 | 无远程模型 | — | 本地 SVG 头像降级 |
 
-- **API Key**: `4545b9e1adec45c08b53481a5a89759f.gXcXow7j1SmbmbcZ`
-- **默认模型**: `glm-4-flash`
-- **配置文件位置**: [backend/.env](file:///d:/Ai_robotchat/backend/.env)
+两条链路均为 OpenAI 兼容协议，使用 `openai.OpenAI` 客户端；配置全部经环境变量注入（env 优先，代码不写死）。**密钥只存在于 `backend/.env`（已被 gitignore），本文档一律使用 `sk-***` 占位。**
 
-## 项目结构更新
+## 架构
 
-### 1. Python AI 服务
+```
+用户消息 ──► Python AI 服务 (backend/, 端口 5000)
+                │
+                ├─ 纯文本 ──► 文本链路 MiMo (mimo-v2.6-flash)
+                │              └─ LangChain Agent（Function Calling + RAG）
+                │
+                ├─ 带图片 ──► 视觉链路 GPTCODEX (gpt-6-luna)
+                │
+                └─ 头像生成 ─► LLM_IMAGE_MODEL 置空 → 本地 SVG 降级
+```
 
-**更新文件**:
-- [backend/requirements.txt](file:///d:/Ai_robotchat/backend/requirements.txt) - 添加了 `zhipuai` 依赖
-- [backend/.env](file:///d:/Ai_robotchat/backend/.env) - 新增配置文件
-- [backend/main.py](file:///d:/Ai_robotchat/backend/main.py) - 集成智谱 AI SDK
+## 环境变量配置
 
-**主要功能**:
-- 集成智谱 AI 官方 SDK
-- 支持对话历史
-- 支持系统提示词
-- 异常处理和降级策略
-- API 使用统计
+配置文件位置：[backend/.env](file:///d:/Ai_robotchat/backend/.env)（复制 [backend/.env.example](file:///d:/Ai_robotchat/backend/.env.example) 后填入真实值）。
 
-### 2. Java 后端
+### 文本链路（小米 MiMo）
 
-**更新文件**:
-- [backend-java/src/main/java/com/ai/companion/service/impl/ChatServiceImpl.java](file:///d:/Ai_robotchat/backend-java/src/main/java/com/ai/companion/service/impl/ChatServiceImpl.java) - 更新 AI 调用逻辑
-- [backend-java/src/main/java/com/ai/companion/config/RestTemplateConfig.java](file:///d:/Ai_robotchat/backend-java/src/main/java/com/ai/companion/config/RestTemplateConfig.java) - 新增配置类
+| 变量 | 示例值 | 说明 |
+| --- | --- | --- |
+| `LLM_MODEL_API_KEY` | `sk-***` | MiMo 平台密钥 |
+| `LLM_MODEL_BASE_URL` | `https://api.xiaomimimo.com/v1` | OpenAI 兼容端点 |
+| `LLM_MODEL_MODEL` | `mimo-v2.6-flash` | 文本模型 |
 
-**主要功能**:
-- 调用 Python AI 服务
-- 传递对话历史
-- 支持系统提示词（伴侣人设）
-- 异常处理和降级
+### 视觉链路（GPTCODEX 中转站）
+
+| 变量 | 示例值 | 说明 |
+| --- | --- | --- |
+| `LLM_VISION_API_KEY` | `sk-***` | GPTCODEX 中转站密钥 |
+| `LLM_VISION_BASE_URL` | `https://gptcodex.top/v1` | OpenAI 兼容端点 |
+| `LLM_VISION_MODEL` | `gpt-6-luna` | 图片理解模型 |
+
+### 图像生成与采样参数
+
+| 变量 | 示例值 | 说明 |
+| --- | --- | --- |
+| `LLM_IMAGE_MODEL` | （空） | 置空触发本地 SVG 头像降级 |
+| `LLM_TEMPERATURE` | `0.7` | 采样温度（两链路共用） |
+| `LLM_MAX_TOKENS` | `1024` | 最大输出 token |
+| `LLM_TOP_P` | `0.9` | 核采样 |
+
+## Python AI 服务
+
+### 更新文件
+
+- [backend/.env](file:///d:/Ai_robotchat/backend/.env) — 双链路变量
+- [backend/main.py](file:///d:/Ai_robotchat/backend/main.py) — 双 `openai.OpenAI` 客户端，按 `images` 路由文本/视觉链路
+- [backend/app/ai/config.py](file:///d:/Ai_robotchat/backend/app/ai/config.py) — `LLMConfig` 配置类（env 优先）
+- [backend/app/ai/langchain_client.py](file:///d:/Ai_robotchat/backend/app/ai/langchain_client.py) — LangChain Agent（Function Calling + RAG）
+- [backend/app/ai/rag.py](file:///d:/Ai_robotchat/backend/app/ai/rag.py) — RAG 知识库（本地哈希向量，两平台无 Embedding 端点）
+
+### 主要功能
+
+- 双客户端按功能路由（文本 / 视觉）
+- 对话历史、系统提示词（伴侣人设）
+- 普通对话关闭模型思考（`thinking: disabled`）以降低延迟；LangChain 链路保留思考以保证工具选择质量
+- 完整降级链：LangChain Agent → OpenAI 直连 → 预设回复库
+
+### 示例代码
+
+```python
+from openai import OpenAI
+
+# 文本链路
+llm = OpenAI(api_key="sk-***", base_url="https://api.xiaomimimo.com/v1")
+resp = llm.chat.completions.create(
+    model="mimo-v2.6-flash",
+    messages=[{"role": "user", "content": "你好"}],
+    max_completion_tokens=512,
+    extra_body={"thinking": {"type": "disabled"}},  # 普通对话关思考降延迟
+)
+
+# 视觉链路（图片理解）
+vision = OpenAI(api_key="sk-***", base_url="https://gptcodex.top/v1")
+resp = vision.chat.completions.create(
+    model="gpt-6-luna",
+    messages=[{"role": "user", "content": [
+        {"type": "text", "text": "描述这张图片"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+    ]}],
+    max_completion_tokens=200,
+)
+```
 
 ## 启动步骤
 
@@ -49,6 +108,7 @@ python main.py
 ```
 
 访问健康检查接口验证：http://localhost:5000/health
+（响应中 `llm_available` / `vision_available` 分别表示两条链路的初始化状态）
 
 ### 2. 启动 Java 后端
 
@@ -61,91 +121,26 @@ mvn spring-boot:run
 ## 工作流程
 
 ```
-用户消息 → Java 后端 → Python AI 服务 → 智谱 AI API
+用户消息 → Java 后端 → Python AI 服务
+                          ├─ 文本 ─► MiMo mimo-v2.6-flash
+                          ├─ 图片 ─► GPTCODEX gpt-6-luna
+                          └─ 头像 ─► 本地 SVG
                      ↓
             保存对话历史
                      ↓
             返回 AI 回复
 ```
 
-## 技术特点
+## 容错设计
 
-### 智谱 AI 集成
-- 使用官方 SDK
-- 流式输出（可选）
-- Token 使用统计
-- 错误重试机制
-
-### 对话管理
-- 完整对话历史
-- 上下文保持
-- 人设一致性
-
-### 容错设计
-- API 降级策略
-- 异常处理
-- 健康检查
-
-## API 文档
-
-### AI 服务 - 聊天生成
-
-**Endpoint**: `POST /api/v1/ai/chat`
-
-**Request**:
-```json
-{
-  "systemPrompt": "你是一个温柔体贴的AI伴侣",
-  "messages": [
-    {"role": "user", "content": "你好"},
-    {"role": "assistant", "content": "你好，我是你的AI伴侣"}
-  ],
-  "userMessage": "今天天气怎么样？"
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "message": "Chat generated successfully",
-  "data": {
-    "content": "AI 回复内容",
-    "usage": {
-      "prompt_tokens": 100,
-      "completion_tokens": 50
-    }
-  },
-  "timestamp": "2024-01-01T00:00:00Z"
-}
-```
-
-### AI 服务 - 头像生成
-
-**Endpoint**: `POST /api/v1/ai/generate-avatar`
-
-**Request**:
-```json
-{
-  "personality": "温柔体贴",
-  "description": "可爱的动漫女孩"
-}
-```
-
-## 模型选择
-
-当前默认使用 `glm-4-flash`，您可以根据需要在 `.env` 文件中修改：
-
-```bash
-ZHIPU_MODEL=glm-4-flash
-# 或者其他模型：
-# ZHIPU_MODEL=glm-4
-# ZHIPU_MODEL=glm-4-plus
-```
+- **降级策略**：LangChain Agent → OpenAI 直连 → 预设回复库，任一层失败自动落到下一层
+- **视觉缺失**：`LLM_VISION_API_KEY` 未配置时图片被丢弃并打印告警，对话不中断
+- **图像生成**：`LLM_IMAGE_MODEL` 置空或远程调用失败时自动生成本地 SVG 头像
+- **RAG**：Chroma 不可用时退化为内存检索；Embedding 使用本地哈希向量（两平台无 Embedding 端点）
 
 ## 注意事项
 
-1. **API 密钥安全**: 请不要将 `.env` 文件提交到代码仓库
-2. **Token 用量**: 注意智谱 AI 的 Token 使用量和费用
+1. **API 密钥安全**: 密钥只写入 `.env`（gitignore 已忽略），不要提交到代码仓库或写入文档
+2. **Token 用量**: 注意两个平台的 Token 使用量和费用
 3. **服务依赖**: Java 后端依赖 Python AI 服务，需要按顺序启动
-4. **网络连接**: 确保可以访问智谱 AI API
+4. **网络连接**: 确保可以访问 `api.xiaomimimo.com` 与 `gptcodex.top`

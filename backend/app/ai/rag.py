@@ -1,19 +1,19 @@
 """
-RAG ????? - ???????Retrieval-Augmented Generation?
+RAG 知识库模块 —— 轻量检索增强生成（Retrieval-Augmented Generation）。
 
-?????
-1. ???? Embedding?embedding-3???????
-2. ?? Chroma ?????????
-3. ??? Embedding ??????????/???????????
-   ???????????????????????
-4. ????????MemoryService / user_memories ?????
-   RAG ??"?????"???????????
+设计要点：
+1. 当前两平台（MiMo / GPTCODEX）均无 Embedding 端点，使用本地哈希向量
+   （SimpleHashEmbeddings）做字符级相似度检索，零外部依赖、不会失败。
+2. 优先使用 Chroma 持久化向量库；Chroma 不可用时退化为内存文档列表。
+3. 文档按中文标点/换行切分，支持大段文本入库。
+4. 记忆数据与 MemoryService / user_memories 表互补：
+   RAG 负责"非结构化知识"，数据库负责"结构化记忆"。
 
-?????
+用法：
     from app.ai.rag import get_rag_store
     store = get_rag_store()
-    store.add_texts(["???????"], metadatas=[{"user_id": "u1"}])
-    docs = store.search("???????", user_id="u1", k=3)
+    store.add_texts(["用户喜欢猫"], metadatas=[{"user_id": "u1"}])
+    docs = store.search("喜欢什么宠物", user_id="u1", k=3)
 """
 
 import os
@@ -23,14 +23,14 @@ from typing import List, Optional, Dict, Any
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 
-# ---- ????????? ----
+# ---- 文本切分器 ----
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     _SPLITTER_AVAILABLE = True
 except ImportError:
     _SPLITTER_AVAILABLE = False
 
-# ---- ?????Chroma ??? ----
+# ---- Chroma 向量库 ----
 try:
     from langchain_community.vectorstores import Chroma
     _CHROMA_AVAILABLE = True
@@ -40,42 +40,15 @@ except ImportError:
 
 
 # ============================================================
-# Embedding ??
+# Embedding 实现
 # ============================================================
 
-class ZhipuEmbeddings(Embeddings):
-    """?? AI Embedding ???OpenAI ????? embeddings.create?"""
-
-    def __init__(self, api_key: str, model: str = "embedding-3"):
-        self.api_key = api_key
-        self.model = model
-        self._client = None
-        self._failed = False  # ???????????????????
-
-    @property
-    def client(self):
-        if self._client is None:
-            from zhipuai import ZhipuAI
-            self._client = ZhipuAI(api_key=self.api_key)
-        return self._client
-
-    def _embed_one(self, text: str) -> List[float]:
-        resp = self.client.embeddings.create(model=self.model, input=text)
-        return list(resp.data[0].embedding)
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return [self._embed_one(t) for t in texts]
-
-    def embed_query(self, text: str) -> List[float]:
-        return self._embed_one(text)
-
-
 class SimpleHashEmbeddings(Embeddings):
-    """????????????????????????
+    """本地哈希向量 Embedding（无需任何远程 API）。
 
-    ?????????????"??????"????
-    Embedding API ?????????????????????
-    Embedding????????????
+    把文本按字符级哈希映射到固定维度向量，用字符重叠近似语义相似度。
+    两平台均无 Embedding 端点时的默认实现——确定性强、零失败率，
+    检索质量弱于语义 Embedding，但对短文本/关键词匹配足够可用。
     """
 
     def __init__(self, dim: int = 256):
@@ -85,7 +58,7 @@ class SimpleHashEmbeddings(Embeddings):
         vec = [0.0] * self.dim
         text = text or ""
         for i, ch in enumerate(text):
-            # ??? + ?????????????????
+            # 字符 + 位置联合哈希，降低碰撞集中度
             h = (ord(ch) * 31 + i * 17) % self.dim
             vec[h] += 1.0
         norm = math.sqrt(sum(v * v for v in vec)) or 1.0
@@ -98,86 +71,28 @@ class SimpleHashEmbeddings(Embeddings):
         return self._embed(text)
 
 
-class FallbackEmbeddings(Embeddings):
-    """?????? Embedding ???
+def build_embeddings(api_key: str = "", model: str = "") -> Embeddings:
+    """构建 Embedding 实现。
 
-    ?????????? Embedding??? embedding-3??????
-    - ??  -> ????? Embedding????????
-    - ??? -> ??????? Embedding?????????
-                ??????????????? / 429
+    两平台均无 Embedding 端点，直接使用本地哈希向量；
+    保留 api_key/model 形参以兼容旧调用方（未来接入远程 Embedding 时启用）。
     """
-
-    def __init__(self, primary: Embeddings, fallback: Embeddings, probe_text: str = "ping"):
-        self.primary = primary
-        self.fallback = fallback
-        self._use_primary = False
-        self._probe(probe_text)
-
-    def _probe(self, probe_text: str):
-        try:
-            vec = self.primary.embed_query(probe_text)
-            if vec and len(vec) > 0:
-                self._use_primary = True
-                print(f"[RAG] ? Embedding ????? {len(vec)}??????????")
-                return
-        except Exception as e:
-            print(f"[RAG] ? Embedding ??????????????: {str(e)[:120]}")
-        self._use_primary = False
-
-    @property
-    def active_backend(self) -> str:
-        return "zhipu" if self._use_primary else "hash_fallback"
-
-    def _active(self) -> Embeddings:
-        return self.primary if self._use_primary else self.fallback
-
-    def embed_documents(self, texts):
-        emb = self._active()
-        try:
-            return emb.embed_documents(texts)
-        except Exception as e:
-            if self._use_primary:
-                print(f"[RAG] ? Embedding ????????????: {str(e)[:120]}")
-                self._use_primary = False
-                return self.fallback.embed_documents(texts)
-            raise
-
-    def embed_query(self, text):
-        emb = self._active()
-        try:
-            return emb.embed_query(text)
-        except Exception as e:
-            if self._use_primary:
-                print(f"[RAG] ? Embedding ????????????: {str(e)[:120]}")
-                self._use_primary = False
-                return self.fallback.embed_query(text)
-            raise
-
-
-def build_embeddings(api_key: str, model: str = "embedding-3") -> Embeddings:
-    """?? Embedding ???????? + ?????"""
-    fallback = SimpleHashEmbeddings()
-    if not api_key or not api_key.strip():
-        print("[RAG] ??? API Key?????????????")
-        return fallback
-    return FallbackEmbeddings(
-        primary=ZhipuEmbeddings(api_key=api_key, model=model),
-        fallback=fallback,
-    )
+    print("[RAG] 使用本地哈希向量 Embedding（两平台均无远程 Embedding 端点）")
+    return SimpleHashEmbeddings()
 
 
 # ============================================================
-# RAG ??
+# RAG 存储
 # ============================================================
 
 class RAGStore:
-    """RAG ??????Chroma ??? + ???????"""
+    """RAG 存储封装：Chroma 向量库 + 内存兜底"""
 
     def __init__(
         self,
         persist_dir: str,
         api_key: str = "",
-        embedding_model: str = "embedding-3",
+        embedding_model: str = "",
         collection_name: str = "ai_companion_knowledge",
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -193,16 +108,16 @@ class RAGStore:
         self._store = None
         self._init_error = None
 
-        # ??????????
+        # 内存兜底文档
         self._memory_docs: List[Document] = []
 
         self._init_store()
 
-    # ---------- ??? ----------
+    # ---------- 初始化 ----------
     def _init_store(self):
         if not _CHROMA_AVAILABLE:
-            self._init_error = "langchain_community.vectorstores.Chroma ???"
-            print(f"[RAG] {self._init_error}?????????")
+            self._init_error = "langchain_community.vectorstores.Chroma 不可用"
+            print(f"[RAG] {self._init_error}，使用内存兜底")
             return
         try:
             self._store = Chroma(
@@ -210,13 +125,13 @@ class RAGStore:
                 embedding_function=self.embeddings,
                 persist_directory=self.persist_dir,
             )
-            print(f"[RAG] Chroma ??????: {self.persist_dir}")
+            print(f"[RAG] Chroma 向量库已加载: {self.persist_dir}")
         except Exception as e:
             self._init_error = str(e)
             self._store = None
-            print(f"[RAG] Chroma ?????: {e}?????????")
+            print(f"[RAG] Chroma 初始化失败: {e}，使用内存兜底")
 
-    # ---------- ?? ----------
+    # ---------- 切分 ----------
     def _split(self, text: str) -> List[str]:
         text = (text or "").strip()
         if not text:
@@ -225,19 +140,19 @@ class RAGStore:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=self.chunk_size,
                 chunk_overlap=self.chunk_overlap,
-                separators=["\n\n", "\n", "?", "?", "?", "?", "?", " ", ""],
+                separators=["\n\n", "\n", "。", "？", "！", "，", "：", " ", ""],
             )
             return [c for c in splitter.split_text(text) if c.strip()]
         return [text]
 
-    # ---------- ?? ----------
+    # ---------- 写入 ----------
     def add_texts(
         self,
         texts: List[str],
         metadatas: Optional[List[Dict[str, Any]]] = None,
         ids: Optional[List[str]] = None,
     ) -> int:
-        """?????????????????"""
+        """批量写入文本，返回实际写入的分块数"""
         metadatas = metadatas or [{} for _ in texts]
         docs: List[Document] = []
         doc_ids: List[str] = []
@@ -256,20 +171,20 @@ class RAGStore:
                 self._store.add_documents(documents=docs, ids=doc_ids)
                 return len(docs)
             except Exception as e:
-                print(f"[RAG] ?????????????: {e}")
+                print(f"[RAG] Chroma 写入失败，转内存兜底: {e}")
 
-        # ???????
+        # 内存兜底
         self._memory_docs.extend(docs)
         return len(docs)
 
-    # ---------- ?? ----------
+    # ---------- 检索 ----------
     def search(
         self,
         query: str,
         user_id: Optional[str] = None,
         k: int = 4,
     ) -> List[Document]:
-        """??????"""
+        """相似度检索"""
         query = (query or "").strip()
         if not query:
             return []
@@ -279,9 +194,9 @@ class RAGStore:
                 flt = {"user_id": user_id} if user_id else None
                 return self._store.similarity_search(query, k=k, filter=flt)
             except Exception as e:
-                print(f"[RAG] ????????????: {e}")
+                print(f"[RAG] Chroma 检索失败，转内存兜底: {e}")
 
-        # ??????????
+        # 内存兜底检索
         return self._memory_search(query, user_id, k)
 
     def _memory_search(
@@ -305,16 +220,16 @@ class RAGStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [d for s, d in scored[:k] if s > 0]
 
-    # ---------- ???? ----------
+    # ---------- 快捷入口 ----------
     def add_memory(self, user_id: str, content: str, memory_type: str = "fact") -> int:
-        """????????????"""
+        """写入用户记忆（带 user_id 元数据）"""
         return self.add_texts(
             [content],
             metadatas=[{"user_id": user_id, "memory_type": memory_type, "source": "memory"}],
         )
 
     def add_knowledge(self, title: str, content: str, category: str = "general") -> int:
-        """??????????"""
+        """写入知识库条目"""
         return self.add_texts(
             [content],
             metadatas=[{"title": title, "category": category, "source": "knowledge"}],
@@ -323,37 +238,30 @@ class RAGStore:
     @property
     def backend(self) -> str:
         store = "chroma" if self._store is not None else "memory_fallback"
-        emb = getattr(self.embeddings, "active_backend", "unknown")
+        emb = getattr(self.embeddings, "active_backend", "hash")
         return f"{store}+{emb}"
 
 
 # ============================================================
-# ??
+# 单例
 # ============================================================
 
 _rag_store: Optional[RAGStore] = None
 
 
 def get_rag_store() -> Optional[RAGStore]:
-    """?? RAG ????????????? None????????"""
+    """获取 RAG 存储单例；初始化失败返回 None（调用方降级）"""
     global _rag_store
     if _rag_store is not None:
         return _rag_store
 
     try:
-        from app.ai.config import ZhipuAIConfig
-        config = ZhipuAIConfig()
-
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         persist_dir = os.path.join(base_dir, "chroma_db")
 
-        _rag_store = RAGStore(
-            persist_dir=persist_dir,
-            api_key=config.API_KEY,
-            embedding_model=getattr(config, "EMBEDDING_MODEL", "embedding-3"),
-        )
+        _rag_store = RAGStore(persist_dir=persist_dir)
     except Exception as e:
-        print(f"[RAG] ??????RAG ?????: {e}")
+        print(f"[RAG] RAG 存储初始化失败，功能降级: {e}")
         _rag_store = None
 
     return _rag_store
