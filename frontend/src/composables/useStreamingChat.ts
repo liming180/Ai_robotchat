@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 
 const API_BASE = 'http://localhost:5000'
 
@@ -12,12 +12,15 @@ export function useStreamingChat() {
     historyMessages: Array<{ role: string; content: string; images?: string[] }>,
     onChunk?: (text: string) => void,
     images?: string[],
+    enableRAG: boolean = true
   ): Promise<string> {
     isStreaming.value = true
     streamingContent.value = ''
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/ai/chat/stream`, {
+      // 根据是否启用RAG选择不同的API端点
+      const endpoint = enableRAG ? '/api/v1/ai/chat/langchain/stream' : '/api/v1/ai/chat/stream'
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -25,6 +28,7 @@ export function useStreamingChat() {
           systemPrompt,
           messages: historyMessages,
           images: images?.length ? images : undefined,
+          userId: 'default_user', // 临时用户ID，实际应该从登录状态获取
         }),
       })
 

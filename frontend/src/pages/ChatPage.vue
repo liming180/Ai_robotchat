@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-screen flex bg-[#0d0f14] overflow-hidden">
 
     <!-- 左侧边栏 -->
@@ -309,6 +309,22 @@
         </div>
       </Transition>
 
+          <!-- RAG 开关 -->
+      <div class="flex-shrink-0 border-t border-white/5 bg-[#111318]/60">
+        <div class="px-4 py-2 flex items-center justify-between max-w-4xl mx-auto">
+          <button 
+            @click="enableRAG = !enableRAG"
+            :class="enableRAG ? 'bg-violet-500/20 text-violet-400 border-violet-500/30' : 'bg-white/5 text-slate-500 border-white/10'"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border"
+          >
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            RAG 智能记忆
+          </button>
+          <span class="text-xs" :class="enableRAG ? 'text-violet-400' : 'text-slate-500'">
+            {{ enableRAG ? '🧠 已启用 - AI将检索你的记忆和知识库' : '📝 基础模式 - 直接对话' }}
+          </span>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -334,6 +350,8 @@ const messagesContainer = ref<HTMLElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const pendingImages = ref<string[]>([])
 const previewImage = ref<string | null>(null)
+
+const enableRAG = ref(true)
 
 const { streamingContent, isStreaming, sendStreaming, fetchSuggestions, reset: resetStream } = useStreamingChat()
 
@@ -489,7 +507,7 @@ const sendMessage = async () => {
     }))
     const systemPrompt = currentCompanion.value.systemPrompt || '你是一个温柔体贴的AI伴侣。'
 
-    const reply = await sendStreaming(content, systemPrompt, history, () => scrollToBottom(), images)
+    const reply = await sendStreaming(content, systemPrompt, history, () => scrollToBottom(), images, enableRAG.value)
 
     chatStore.addMessage(chatStore.currentConversationId, 'assistant', reply)
     companionStore.increaseIntimacy(companionId.value, 2)
@@ -606,3 +624,4 @@ watch(() => chatStore.currentMessages.length, () => scrollToBottom(true))
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
 </style>
+
