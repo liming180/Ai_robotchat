@@ -83,3 +83,6 @@ ai_companion.db
 
 # RAG 上传的运行时文件（本地数据，不入库）
 RAG-Knowledge-System/backend/storage/uploads/
+
+# 环境变量模板例外（不含密钥，需入库供新环境复制）
+!RAG-Knowledge-System/backend/.env.example
