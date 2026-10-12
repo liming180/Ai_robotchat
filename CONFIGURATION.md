@@ -19,7 +19,7 @@
 |--------|-----|
 | 主机地址 | localhost |
 | 端口 | 6379 |
-| 密码 | asdfghjkl54321 |
+| 密码 | 本机配置，见 Redis 配置文件（不入库） |
 | 数据库 | 1 |
 
 ### 后端服务配置
@@ -49,7 +49,10 @@
 
 ### 1. 启动 MySQL 和 Redis
 
-确保 MySQL 和 Redis 服务已启动，使用密码 `asdfghjkl54321`
+确保 MySQL 和 Redis 服务已启动。
+
+- MySQL 密码见 [application.yml](file:///d:/Ai_robotchat/backend-java/src/main/resources/application.yml) 的 datasource 配置
+- Redis 密码已更换：通过环境变量 `REDIS_PASSWORD` 注入（Java 端 application.yml 使用 `${REDIS_PASSWORD:}`），本机已设置；Python 端配置在 `backend/.env` 的 `REDIS_URL`
 
 ### 2. 初始化数据库
 
