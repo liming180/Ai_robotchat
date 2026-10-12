@@ -1,0 +1,28 @@
+# RAG 知识库系统 - Python 依赖
+# 一期（BackgroundTasks 异步，不依赖 Redis / Celery）
+
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-dotenv>=1.0.0
+httpx>=0.25.0
+pydantic-settings>=2.0.0
+sqlalchemy>=2.0.0
+
+# MySQL 驱动（MySQL 8 的 caching_sha2_password 需要 cryptography）
+pymysql>=1.1.0
+cryptography>=41.0.0
+
+# 文件上传（multipart/form-data）
+python-multipart>=0.0.6
+
+# LangChain + 向量库
+langchain>=1.0.0
+langchain-openai>=0.3.0
+langchain-community>=0.3.0
+langchain-chroma>=0.2.0
+langchain-text-splitters>=0.3.0
+chromadb>=0.4.0
+
+# ---- 二期（异步队列）启用以下依赖，并先安装 Redis ----
+# celery>=5.3.0
+# redis>=5.0.0
