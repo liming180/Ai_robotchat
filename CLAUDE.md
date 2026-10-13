@@ -13,7 +13,7 @@ AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分�
 | 前端 | `frontend/` | 3000 | Vue 3 + TypeScript + Vite 5 + Pinia + Tailwind CSS |
 | Python AI 服务 | `backend/` | 5000 | FastAPI + 双模型（MiMo 文本 / GPTCODEX 视觉）+ LangChain 1.x |
 | Java 业务后端 | `backend-java/` | 8080 | Spring Boot 3 + MyBatis Plus + MySQL |
-| RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + Chroma 向量库 |
+| RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + Chroma + 本地哈希向量 |
 
 注意：根目录 `README.md` 写的后端端口 8000 已过时，实际为 5000（前端硬编码、`main.py` 的 `APP_PORT` 默认值均为 5000）。
 
@@ -67,6 +67,11 @@ python main.py        # API 文档: http://localhost:8002/docs
 - `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——两平台均无 Embedding 端点；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 双链路配置）、`avatar_store.py`。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
+### RAG 知识库服务（RAG-Knowledge-System/backend/）
+
+- 独立 FastAPI 服务（8002）：知识库/文档/切片/检索 API，元数据存 MySQL `rag_knowledge` 库，向量存本目录 `storage/chroma_db/`。
+- Embedding 已从智谱 embedding-3（2048 维）切换为本地哈希向量 `SimpleHashEmbeddings`（256 维，`app/vectorstore/embeddings.py`）——zhipuai 依赖与智谱 key 已移除，**旧 2048 维向量与新实现不兼容，历史知识库需重新导入**。
+
 ### 接口约定
 
 - 请求体 `ChatRequest`：`{ systemPrompt, messages[{role,content,images?}], userMessage, images?, userId? }`（images 为 base64 data URL）。
@@ -82,8 +87,9 @@ python main.py        # API 文档: http://localhost:8002/docs
 ## 配置
 
 - `backend/.env`（已被 gitignore）：双链路变量 `LLM_MODEL_API_KEY`/`LLM_MODEL_BASE_URL`/`LLM_MODEL_MODEL`（文本 MiMo）、`LLM_VISION_API_KEY`/`LLM_VISION_BASE_URL`/`LLM_VISION_MODEL`（视觉 GPTCODEX）、`LLM_IMAGE_MODEL`（置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
-- `AI_INTEGRATION.md` 中含有明文 API 密钥，不要将其复制进代码、提交记录或对外发布的文档。
-- `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp` 等运行时/密钥文件。
+- `AI_INTEGRATION.md` — 双链路架构文档，密钥一律 `sk-***` 占位（历史版本曾含明文，git 历史中仍存留旧智谱密码，勿再引用）。
+- **Java 端密码注入**：`backend-java/application.yml` 的 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}` 环境变量占位，本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。
+- `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp` 等运行时/密钥文件；`RAG-Knowledge-System/backend/storage/uploads/` 上传数据同样不入库。
 
 ## 文档
 
