@@ -11,7 +11,7 @@
 | 主机地址 | localhost |
 | 端口 | 3306 |
 | 用户名 | root |
-| 密码 | asdfghjkl54321 |
+| 密码 | 本机配置，通过环境变量 `MYSQL_PASSWORD` 注入（不入库） |
 
 ### Redis 配置
 
@@ -64,7 +64,7 @@ init-db.bat
 
 或者手动执行 SQL 脚本：
 ```bash
-mysql -u root -pasdfghjkl54321 < backend-java/src/main/resources/schema.sql
+mysql -u root -p < backend-java/src/main/resources/schema.sql   # -p 后不接密码，交互输入
 ```
 
 ### 3. 启动服务

@@ -19,15 +19,16 @@ class Settings(BaseSettings):
     app_debug: bool = True
 
     # ---- 元数据库：共用 MySQL 实例，独立 database ----
+    # 密码不写默认值（本机在 .env 的 DATABASE_URL / MAIN_DATABASE_URL 注入）
     database_url: str = (
-        "mysql+pymysql://root:asdfghjkl54321@localhost:3306/rag_knowledge?charset=utf8mb4"
+        "mysql+pymysql://root@localhost:3306/rag_knowledge?charset=utf8mb4"
     )
     # SQL 日志开关（与 app_debug 解耦，避免日志爆炸）
     db_echo: bool = False
 
     # ---- 主库只读连接（角色列表用）----
     main_database_url: str = (
-        "mysql+pymysql://root:asdfghjkl54321@localhost:3306/ai_companion?charset=utf8mb4"
+        "mysql+pymysql://root@localhost:3306/ai_companion?charset=utf8mb4"
     )
 
     # ---- 向量库 ----
