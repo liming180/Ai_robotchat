@@ -1,17 +1,17 @@
 """
 数据库初始化脚本
-自动创建所有 SQLAlchemy 模型对应的表
+创建 Python AI 服务负责的业务表（仅记忆 / 情绪）。
+
+说明：用户 / 伴侣 / 对话 / 消息由 Java 业务后端写入 MySQL，不在本服务建表。
 用法：python init_db.py
 """
 from app.database import engine, Base
-from app.models.user import User
-from app.models.chat import Conversation, Message
-from app.models.companion import Companion, UserCompanion
-from app.models.memory import UserMemory, UserMood
+# 只需 import 模型，SQLAlchemy 才会把它注册进 Base.metadata
+from app.models.memory import UserMemory, UserMood  # noqa: F401
 
 
 def init_database():
-    """创建所有表（逐表创建，兼容性差的表跳过而不中断）"""
+    """创建所有表（逐表创建，单表失败不中断其余表）"""
     print("正在初始化数据库...")
 
     if engine is None:
@@ -21,7 +21,6 @@ def init_database():
         print("[HINT] 如果使用 SQLite，确保路径正确。")
         return
 
-    # 逐表创建：遇到不兼容的类型（如 SQLite 下的 ARRAY）跳过该表，不影响其余表
     from sqlalchemy import inspect
     skipped = []
     created = []
@@ -34,13 +33,10 @@ def init_database():
 
     print(f"成功创建的表: {created}")
     if skipped:
-        print("[WARNING] 以下表因类型不兼容被跳过（不影响记忆/心情核心功能）:")
+        print("[WARNING] 以下表创建失败（不影响其余表）:")
         for name, err in skipped:
             print(f"  - {name}: {err}")
-        print("[HINT] 项目模型使用了 PostgreSQL 特有类型（UUID/ARRAY）。")
-        print("[HINT] 如需在 MySQL/SQLite 下创建这些表，需将模型中的 ARRAY 改为 JSON、UUID 改为 String(36)。")
 
-    # 打印最终所有表
     inspector = inspect(engine)
     print(f"数据库现有表: {inspector.get_table_names()}")
 

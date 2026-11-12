@@ -40,5 +40,17 @@ ai:
   service:
     url: http://localhost:5000
 
+app:
+  # 图片本地上传目录。相对路径按 Java 进程的工作目录解析，实际映射到绝对路径后由 /uploads/** 暴露。
+  # 生产环境建议改为绝对路径或替换为对象存储。
+  upload:
+    dir: ./uploads
+    base-url: http://localhost:8080
+    max-size: 5242880  # 5MB
+  email:
+    # true 时验证码固定为 123456 且在接口响应中返回，仅用于本地联调。
+    # 默认 false（代码里的 @Value 兜底），部署环境必须关闭。
+    mock: true
+
 server:
   port: 8080

@@ -17,6 +17,9 @@ public class Message {
 
     private String content;
 
+    /** 图片 URL 的 JSON 数组字符串（如 ["http://localhost:8080/uploads/2026-11/a.jpg"]）。无图时为 null。 */
+    private String images;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

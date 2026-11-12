@@ -76,6 +76,8 @@ target/
 chroma_db/
 .tmppip/
 .tmp/
+# 编辑器半成品（如 prompts.py.tmp.27176.xxx），已移出 git 跟踪
+*.tmp.*
 
 # Runtime data (local only)
 ai_companion.db
@@ -83,6 +85,9 @@ ai_companion.db
 
 # RAG 上传的运行时文件（本地数据，不入库）
 RAG-Knowledge-System/backend/storage/uploads/
+
+# Java 服务上传的图片（本地数据，不入库）
+backend-java/uploads/
 
 # 环境变量模板例外（不含密钥，需入库供新环境复制）
 !RAG-Knowledge-System/backend/.env.example

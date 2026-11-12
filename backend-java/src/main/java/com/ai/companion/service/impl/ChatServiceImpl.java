@@ -89,12 +89,7 @@ public class ChatServiceImpl implements ChatService {
 
         List<ConversationDetailResponse.MessageResponse> msgResponses = new ArrayList<>();
         for (Message msg : messages) {
-            msgResponses.add(new ConversationDetailResponse.MessageResponse(
-                    msg.getId(),
-                    msg.getRole(),
-                    msg.getContent(),
-                    msg.getCreatedAt()
-            ));
+            msgResponses.add(convertToMessageResponse(msg));
         }
 
         return new ConversationDetailResponse(
@@ -129,7 +124,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     @Transactional
-    public Map<String, Object> sendMessage(String userId, String conversationId, String content) {
+    public Map<String, Object> sendMessage(String userId, String conversationId, String content, String images) {
         Conversation conversation = conversationMapper.selectById(conversationId);
         if (conversation == null || !conversation.getUserId().equals(userId)) {
             throw new IllegalArgumentException("对话不存在");
@@ -139,6 +134,7 @@ public class ChatServiceImpl implements ChatService {
         userMessage.setConversationId(conversationId);
         userMessage.setRole("user");
         userMessage.setContent(content);
+        userMessage.setImages(images);
         messageMapper.insert(userMessage);
 
         String aiContent = generateAIResponse(conversationId, conversation.getCompanionId(), content);
@@ -227,6 +223,7 @@ public class ChatServiceImpl implements ChatService {
                 message.getId(),
                 message.getRole(),
                 message.getContent(),
+                message.getImages(),
                 message.getCreatedAt()
         );
     }

@@ -25,6 +25,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/doc.html", "/webjars/**", "/swagger-resources/**", "/v3/api-docs/**").permitAll()
+                        // 上传的图片需匿名可访问：<img> 标签无法携带 Authorization 头。
+                        // 安全性由 URL 中的随机 UUID 文件名保证，不可枚举。
+                        .requestMatchers("/uploads/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

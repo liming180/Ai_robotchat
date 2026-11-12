@@ -10,6 +10,6 @@ public interface ChatService {
     List<ConversationResponse> getConversationList(String userId, String companionId, Integer page, Integer pageSize);
     ConversationDetailResponse getConversationDetail(String userId, String conversationId);
     ConversationResponse createConversation(String userId, String companionId, String title);
-    Map<String, Object> sendMessage(String userId, String conversationId, String content);
+    Map<String, Object> sendMessage(String userId, String conversationId, String content, String images);
     void deleteConversation(String userId, String conversationId);
 }

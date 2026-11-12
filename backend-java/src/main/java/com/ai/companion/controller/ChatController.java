@@ -67,7 +67,8 @@ public class ChatController {
     ) {
         String userId = (String) authentication.getPrincipal();
         String content = request.get("content");
-        Map<String, Object> result = chatService.sendMessage(userId, id, content);
+        String images = request.get("images");
+        Map<String, Object> result = chatService.sendMessage(userId, id, content, images);
         return Result.success("发送成功", result);
     }
 

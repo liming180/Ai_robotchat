@@ -22,12 +22,16 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/send-email-code")
-    @Operation(summary = "发送邮箱验证码")
+    @Operation(summary = "发送邮箱验证码", description = "mock 模式下响应会带回固定验证码，便于本地联调")
     public Result<Map<String, Object>> sendEmailCode(@Valid @RequestBody SendEmailCodeRequest request) {
-        authService.sendEmailCode(request);
+        String mockCode = authService.sendEmailCode(request);
         Map<String, Object> data = new HashMap<>();
         data.put("sent", true);
         data.put("expiresIn", 300);
+        // 仅 mock 模式非 null；真实模式不外泄验证码
+        if (mockCode != null) {
+            data.put("code", mockCode);
+        }
         return Result.success("验证码发送成功", data);
     }
 
