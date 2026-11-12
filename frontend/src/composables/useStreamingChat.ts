@@ -1,6 +1,5 @@
 ﻿import { ref } from 'vue'
-
-const API_BASE = 'http://localhost:5000'
+import { getAiBase } from '@/lib/api'
 
 export function useStreamingChat() {
   const streamingContent = ref('')
@@ -20,7 +19,7 @@ export function useStreamingChat() {
     try {
       // 根据是否启用RAG选择不同的API端点
       const endpoint = enableRAG ? '/api/v1/ai/chat/langchain/stream' : '/api/v1/ai/chat/stream'
-      const res = await fetch(`${API_BASE}${endpoint}`, {
+      const res = await fetch(`${getAiBase()}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,7 +79,7 @@ export function useStreamingChat() {
     historyMessages: Array<{ role: string; content: string }>,
   ): Promise<string[]> {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/ai/suggestions`, {
+      const res = await fetch(`${getAiBase()}/api/v1/ai/suggestions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ systemPrompt, messages: historyMessages }),

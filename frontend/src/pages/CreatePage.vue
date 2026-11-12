@@ -204,6 +204,7 @@ import {
 } from 'lucide-vue-next'
 import { useCompanionStore } from '@/stores/companion'
 import { compressImageFileToDataUrl, createSvgAvatarDataUrl } from '@/lib/avatar'
+import { aiFetch } from '@/lib/api'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
@@ -261,26 +262,17 @@ const generateAIAvatar = async () => {
   isGeneratingAvatar.value = true
 
   try {
-    // 调用 Python 后端的 AI 头像生成 API
-    const response = await fetch('http://localhost:5000/api/v1/ai/generate-avatar', {
+    // 任务五（Java 代理）未完成，暂时直连 Python AI 服务
+    const data = await aiFetch<{ avatarUrl?: string }>('/api/v1/ai/generate-avatar', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+      body: {
         personality: form.value.personality || '温柔体贴',
         description: form.value.description || '一个可爱的AI伴侣'
-      })
+      }
     })
 
-    if (response.ok) {
-      const data = await response.json()
-      if (data.success && data.data?.avatarUrl) {
-        form.value.avatar = data.data.avatarUrl
-      } else {
-        // 备用方案
-        generateFallbackAvatar()
-      }
+    if (data?.avatarUrl) {
+      form.value.avatar = data.avatarUrl
     } else {
       generateFallbackAvatar()
     }
