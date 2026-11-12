@@ -92,6 +92,11 @@
             </button>
           </div>
 
+          <!-- 错误提示 -->
+          <div v-if="errorMessage" class="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+            {{ errorMessage }}
+          </div>
+
           <!-- 登录表单 -->
           <form v-if="isLogin" @submit.prevent="handleLogin" class="space-y-5">
             <div class="space-y-2">
@@ -159,6 +164,7 @@
                   {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
                 </button>
               </div>
+              <p v-if="mockCodeHint" class="text-xs text-pink-400">{{ mockCodeHint }}</p>
             </div>
 
             <button
@@ -237,15 +243,21 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { ApiError } from '@/lib/api'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const isLogin = ref(true)
 const isLoading = ref(false)
 const countdown = ref(0)
 const registerStep = ref(1)
+/** 后端返回的错误文案，内联展示（不再用 alert） */
+const errorMessage = ref('')
+/** mock 模式下后端回传的固定验证码提示 */
+const mockCodeHint = ref('')
 
 const loginForm = ref({
   email: '',
@@ -260,62 +272,123 @@ const registerForm = ref({
   confirmPassword: ''
 })
 
+// 登录成功后回到来源页（守卫写入的 redirect），无来源则去首页
+const goAfterLogin = () => {
+  const redirect = route.query.redirect
+  const target = typeof redirect === 'string' && redirect.startsWith('/') && redirect !== '/login'
+    ? redirect
+    : '/'
+  router.push(target)
+}
+
 // 如果已经登录，直接跳转到首页
 watch(() => userStore.isAuthenticated, (newVal) => {
-  if (newVal) {
-    router.push('/')
-  }
+  if (newVal) goAfterLogin()
 }, { immediate: true })
+
+/** 把 ApiError 的 message 原样展示，其它异常给通用文案 */
+const showError = (error: unknown, fallback: string) => {
+  errorMessage.value = error instanceof ApiError ? error.message : fallback
+  if (error instanceof ApiError && error.status >= 500) console.error(fallback, error)
+}
 
 const switchMode = (login: boolean) => {
   isLogin.value = login
   registerStep.value = 1
+  errorMessage.value = ''
+  mockCodeHint.value = ''
   loginForm.value = { email: '', password: '' }
   registerForm.value = { email: '', code: '', name: '', password: '', confirmPassword: '' }
 }
 
-const sendEmailCode = () => {
-  if (!registerForm.value.email) return
-  countdown.value = 60
-  const timer = setInterval(() => {
-    countdown.value--
-    if (countdown.value <= 0) {
-      clearInterval(timer)
+const sendEmailCode = async () => {
+  errorMessage.value = ''
+  mockCodeHint.value = ''
+  const email = registerForm.value.email.trim()
+  if (!email) {
+    errorMessage.value = '请先填写邮箱'
+    return
+  }
+
+  try {
+    const data = await userStore.sendEmailCode(email)
+    // 本地 mock 模式（app.email.mock=true）会直接回传验证码，方便联调
+    if (data.code) {
+      registerForm.value.code = data.code
+      mockCodeHint.value = `本地 mock 验证码：${data.code}（已自动填入）`
+    } else {
+      mockCodeHint.value = `验证码已发送，${Math.round((data.expiresIn || 300) / 60)} 分钟内有效`
     }
-  }, 1000)
+
+    countdown.value = 60
+    const timer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0) clearInterval(timer)
+    }, 1000)
+  } catch (error) {
+    showError(error, '验证码发送失败，请重试')
+  }
 }
 
-const verifyEmail = async () => {
-  isLoading.value = true
-  // 模拟验证码验证
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  isLoading.value = false
+const verifyEmail = () => {
+  errorMessage.value = ''
+  if (!registerForm.value.email.trim()) {
+    errorMessage.value = '请填写邮箱'
+    return
+  }
+  if (!registerForm.value.code.trim()) {
+    errorMessage.value = '请填写验证码'
+    return
+  }
   registerStep.value = 2
 }
 
 const completeRegister = async () => {
+  errorMessage.value = ''
+  if (!registerForm.value.name.trim()) {
+    errorMessage.value = '请填写用户名'
+    return
+  }
+  if (registerForm.value.password.length < 6) {
+    errorMessage.value = '密码至少 6 位'
+    return
+  }
+  if (registerForm.value.password !== registerForm.value.confirmPassword) {
+    errorMessage.value = '两次输入的密码不一致'
+    return
+  }
+
   isLoading.value = true
   try {
-    await userStore.register(registerForm.value.email, registerForm.value.name, registerForm.value.password)
-    isLoading.value = false
-    router.push('/')
+    await userStore.register({
+      email: registerForm.value.email.trim(),
+      code: registerForm.value.code.trim(),
+      name: registerForm.value.name.trim(),
+      password: registerForm.value.password,
+    })
+    goAfterLogin()
   } catch (error) {
+    showError(error, '注册失败，请重试')
+  } finally {
     isLoading.value = false
-    console.error('注册失败:', error)
-    alert('注册失败，请重试')
   }
 }
 
 const handleLogin = async () => {
+  errorMessage.value = ''
+  if (!loginForm.value.email.trim() || !loginForm.value.password) {
+    errorMessage.value = '请填写邮箱和密码'
+    return
+  }
+
   isLoading.value = true
   try {
-    await userStore.login(loginForm.value.email, loginForm.value.password)
-    isLoading.value = false
-    router.push('/')
+    await userStore.login(loginForm.value.email.trim(), loginForm.value.password)
+    goAfterLogin()
   } catch (error) {
+    showError(error, '登录失败，请重试')
+  } finally {
     isLoading.value = false
-    console.error('登录失败:', error)
-    alert('登录失败，请重试')
   }
 }
 </script>

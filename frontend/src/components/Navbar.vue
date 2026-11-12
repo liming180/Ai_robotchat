@@ -143,7 +143,9 @@ const handleLogout = () => {
   userStore.logout()
   menuOpen.value = false
   mobileMenuOpen.value = false
-  router.push('/')
+  // 登出后必须回 /login：若 push('/') 且当前就在 '/'，vue-router 视为重复导航不触发守卫，
+  // 会停在受保护页的未登录态。
+  router.push('/login')
 }
 
 const handleClickOutside = (e: MouseEvent) => {

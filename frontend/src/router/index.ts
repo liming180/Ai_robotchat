@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getAccessToken } from '@/lib/api'
 import ChatPage from '@/pages/ChatPage.vue'
 import SquarePage from '@/pages/SquarePage.vue'
 import CreatePage from '@/pages/CreatePage.vue'
@@ -55,6 +56,23 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+/**
+ * 全局登录守卫：除 /login 外全部要求登录。
+ * 只读 localStorage 里的 token（经 api.ts 的响应式副本），不 import user store，
+ * 避免 router → stores → api → router 的循环依赖。
+ */
+router.beforeEach((to) => {
+  const loggedIn = getAccessToken() !== null
+
+  if (to.path !== '/login' && !loggedIn) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  if (to.path === '/login' && loggedIn) {
+    return { path: '/' }
+  }
+  return true
 })
 
 export default router

@@ -8,7 +8,10 @@
  *
  * 该文件不 import 任何 store / router（静态），避免
  * api → router → pages → stores → api 的循环依赖；跳转登录用动态 import。
+ * 仅依赖 Vue 自身的 ref（不引入 Pinia / 路由）。
  */
+
+import { ref } from 'vue'
 
 // ── Token 存储（任务三的 user store 复用同一组键）──
 export const TOKEN_KEYS = {
@@ -54,22 +57,31 @@ export function getAiBase(): string {
 }
 
 // ── Token 读写 ──
+/**
+ * accessToken 的响应式副本：user store 的 isAuthenticated 直接派生自它。
+ * 仅读 localStorage 的 computed 不会随登录/登出更新（localStorage 非响应式），
+ * 会导致「token 已被清掉但页面仍认为在线」，LoginPage 的跳转 watch 来回打架。
+ */
+export const accessToken = ref<string | null>(localStorage.getItem(TOKEN_KEYS.access))
+
 export function getAccessToken(): string | null {
-  return localStorage.getItem(TOKEN_KEYS.access)
+  return accessToken.value
 }
 
 export function getRefreshToken(): string | null {
   return localStorage.getItem(TOKEN_KEYS.refresh)
 }
 
-export function setTokens(accessToken: string, refreshToken?: string): void {
-  localStorage.setItem(TOKEN_KEYS.access, accessToken)
+export function setTokens(token: string, refreshToken?: string): void {
+  localStorage.setItem(TOKEN_KEYS.access, token)
   if (refreshToken) localStorage.setItem(TOKEN_KEYS.refresh, refreshToken)
+  accessToken.value = token
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(TOKEN_KEYS.access)
   localStorage.removeItem(TOKEN_KEYS.refresh)
+  accessToken.value = null
 }
 
 // ── 请求参数 ──

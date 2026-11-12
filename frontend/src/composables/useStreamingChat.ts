@@ -11,7 +11,9 @@ export function useStreamingChat() {
     historyMessages: Array<{ role: string; content: string; images?: string[] }>,
     onChunk?: (text: string) => void,
     images?: string[],
-    enableRAG: boolean = true
+    enableRAG: boolean = true,
+    /** Java 登录用户的 UUID，Python 记忆/情绪按它路由（P0-3） */
+    userId?: string | null
   ): Promise<string> {
     isStreaming.value = true
     streamingContent.value = ''
@@ -27,7 +29,8 @@ export function useStreamingChat() {
           systemPrompt,
           messages: historyMessages,
           images: images?.length ? images : undefined,
-          userId: 'default_user', // 临时用户ID，实际应该从登录状态获取
+          // 未登录时传 undefined，由 Python 端使用匿名标识；守卫已保证正常路径下必有值
+          userId: userId ?? undefined,
         }),
       })
 

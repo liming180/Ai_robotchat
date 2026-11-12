@@ -334,6 +334,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
 import { useChatStore } from '@/stores/chat'
+import { useUserStore } from '@/stores/user'
 import { createSvgAvatarDataUrl } from '@/lib/avatar'
 import { useStreamingChat } from '@/composables/useStreamingChat'
 
@@ -341,6 +342,7 @@ const route = useRoute()
 const router = useRouter()
 const companionStore = useCompanionStore()
 const chatStore = useChatStore()
+const userStore = useUserStore()
 
 const messageInput = ref('')
 const isTyping = ref(false)
@@ -507,7 +509,15 @@ const sendMessage = async () => {
     }))
     const systemPrompt = currentCompanion.value.systemPrompt || '你是一个温柔体贴的AI伴侣。'
 
-    const reply = await sendStreaming(content, systemPrompt, history, () => scrollToBottom(), images, enableRAG.value)
+    const reply = await sendStreaming(
+      content,
+      systemPrompt,
+      history,
+      () => scrollToBottom(),
+      images,
+      enableRAG.value,
+      userStore.userId
+    )
 
     chatStore.addMessage(chatStore.currentConversationId, 'assistant', reply)
     companionStore.increaseIntimacy(companionId.value, 2)
