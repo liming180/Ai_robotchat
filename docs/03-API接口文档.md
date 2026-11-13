@@ -330,8 +330,8 @@ Query 参数：`companionId`（可选）、`page`（默认 1）、`pageSize`（�
   "timestamp": "2026-10-23T12:00:00",
   "llm_available": true,
   "vision_available": true,
-  "model": "mimo-v2.6-flash",
-  "vision_model": "gpt-6-luna",
+  "model": "glm-4.5-air",
+  "vision_model": "glm-4v-flash",
   "image_model": null
 }
 ```
@@ -367,7 +367,7 @@ data: {"delta": "天天气…", "done": false}
 data: {"delta": "", "done": true}
 ```
 
-> 图片路由：请求含 `images` 时走视觉模型（gpt-6-luna），否则走文本模型（mimo-v2.6-flash）。
+> 图片路由：请求含 `images` 时走视觉模型（glm-4v-flash），否则走文本模型（glm-4.5-air）。
 > 三层降级：LLM 直连 → … → 预设回复库（`PRESET_RESPONSES`，按性格随机）。
 
 ### 4. LangChain 增强聊天（非流式）

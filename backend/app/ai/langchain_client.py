@@ -1,5 +1,5 @@
 """
-LangChain 客户端 —— 小米 MiMo（mimo-v2.6-flash）Function Calling + RAG。
+LangChain 客户端 —— 智谱 GLM（glm-4.5-air）Function Calling + RAG。
 
 工作方式：
 1. chat() 把 prompt | self.llm、tools 交给 LangChain，由 LLM 决定是否调用工具。
@@ -70,12 +70,12 @@ class NaturalLanguageOutputParser:
 
 
 def create_llm():
-    """创建文本链路 LLM（小米 MiMo，OpenAI 兼容协议）"""
+    """创建文本链路 LLM（智谱 GLM，OpenAI 兼容协议）"""
     from app.ai.config import LLMConfig
     config = LLMConfig()
 
     if not config.is_valid():
-        raise ValueError("LLM API 配置无效：LLM_MODEL_API_KEY 为空")
+        raise ValueError("LLM API 配置无效：ZHIPU_API_KEY 为空")
 
     return ChatOpenAI(
         model=config.MODEL,

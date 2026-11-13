@@ -2,7 +2,7 @@
 本地哈希 Embedding 封装（无需任何远程 API）。
 
 历史：原为智谱 embedding-3 封装（2048 维）。智谱 API key 已作废、
-双模型链路（MiMo / GPTCODEX）均无 Embedding 端点，故与主服务
+当前链路未接入远程 Embedding API，故与主服务
 backend/app/ai/rag.py 采用同一方案：字符级哈希向量，零外部依赖、零失败率。
 
 注意：向量维度为 256。此前用 embedding-3（2048 维）导入的旧集合

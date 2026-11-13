@@ -62,32 +62,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── LLM 客户端初始化（双模型架构，均为 OpenAI 兼容协议） ──
-# 文本链路：小米 MiMo（对话 / suggestions / RAG / tool calling）
-# 视觉链路：GPTCODEX 中转站（图片理解）
-# 图像生成：LLM_IMAGE_MODEL 置空时走本地 SVG 头像降级
-LLM_MODEL_API_KEY = os.getenv("LLM_MODEL_API_KEY", "")
-LLM_MODEL_BASE_URL = os.getenv("LLM_MODEL_BASE_URL", "https://api.xiaomimimo.com/v1")
-LLM_MODEL_MODEL = os.getenv("LLM_MODEL_MODEL", "mimo-v2.6-flash")
-LLM_VISION_API_KEY = os.getenv("LLM_VISION_API_KEY", "")
-LLM_VISION_BASE_URL = os.getenv("LLM_VISION_BASE_URL", "https://gptcodex.top/v1")
-LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "gpt-6-luna")
-LLM_IMAGE_MODEL = os.getenv("LLM_IMAGE_MODEL", "")
+# ── LLM 客户端初始化（智谱 GLM 单平台，OpenAI 兼容协议） ──
+# 文本链路：glm-4.5-air（对话 / suggestions / RAG / tool calling）
+# 视觉链路：glm-4v-flash（图片理解），与文本共用 ZHIPU_API_KEY
+# 图像生成：ZHIPU_IMAGE_MODEL（cogview-4）；为空时走本地 SVG 头像降级
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
+ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4.5-air")
+ZHIPU_VISION_API_KEY = os.getenv("ZHIPU_VISION_API_KEY", "") or ZHIPU_API_KEY
+ZHIPU_VISION_BASE_URL = os.getenv("ZHIPU_VISION_BASE_URL", "") or ZHIPU_BASE_URL
+ZHIPU_VISION_MODEL = os.getenv("ZHIPU_VISION_MODEL", "glm-4v-flash")
+ZHIPU_IMAGE_MODEL = os.getenv("ZHIPU_IMAGE_MODEL", "")
 
 llm_client = None
 vision_client = None
 try:
     from openai import OpenAI
-    if LLM_MODEL_API_KEY:
+    if ZHIPU_API_KEY:
         try:
-            llm_client = OpenAI(api_key=LLM_MODEL_API_KEY, base_url=LLM_MODEL_BASE_URL)
-            print(f"Successfully initialized text LLM client: {LLM_MODEL_MODEL} @ {LLM_MODEL_BASE_URL}")
+            llm_client = OpenAI(api_key=ZHIPU_API_KEY, base_url=ZHIPU_BASE_URL)
+            print(f"Successfully initialized text LLM client: {ZHIPU_MODEL} @ {ZHIPU_BASE_URL}")
         except Exception as e:
             print(f"Failed to initialize text LLM client: {e}")
-    if LLM_VISION_API_KEY:
+    if ZHIPU_VISION_API_KEY:
         try:
-            vision_client = OpenAI(api_key=LLM_VISION_API_KEY, base_url=LLM_VISION_BASE_URL)
-            print(f"Successfully initialized vision LLM client: {LLM_VISION_MODEL} @ {LLM_VISION_BASE_URL}")
+            vision_client = OpenAI(api_key=ZHIPU_VISION_API_KEY, base_url=ZHIPU_VISION_BASE_URL)
+            print(f"Successfully initialized vision LLM client: {ZHIPU_VISION_MODEL} @ {ZHIPU_VISION_BASE_URL}")
         except Exception as e:
             print(f"Failed to initialize vision LLM client: {e}")
 except ImportError as e:
@@ -102,20 +102,20 @@ def _route_llm(images: Optional[List[str]]):
     """
     if images:
         if vision_client is not None:
-            return vision_client, LLM_VISION_MODEL, images
-        print("[LLM] 图片已提供但视觉链路未配置（LLM_VISION_API_KEY 为空），本次请求忽略图片")
-        return llm_client, LLM_MODEL_MODEL, None
-    return llm_client, LLM_MODEL_MODEL, None
+            return vision_client, ZHIPU_VISION_MODEL, images
+        print("[LLM] 图片已提供但视觉链路未配置（ZHIPU_API_KEY 为空），本次请求忽略图片")
+        return llm_client, ZHIPU_MODEL, None
+    return llm_client, ZHIPU_MODEL, None
 
 
 # 初始化 LangChain 客户端
 langchain_client = None
 try:
     from app.ai.langchain_client import LangChainGLMClient
-    if LLM_MODEL_API_KEY:
+    if ZHIPU_API_KEY:
         try:
             langchain_client = LangChainGLMClient()
-            print(f"Successfully initialized LangChain client with model: {LLM_MODEL_MODEL}")
+            print(f"Successfully initialized LangChain client with model: {ZHIPU_MODEL}")
         except Exception as e:
             print(f"Failed to initialize LangChain client: {e}")
 except ImportError as e:
@@ -292,6 +292,20 @@ def _build_messages(
     )
     messages: List[Dict] = [{"role": "system", "content": base_prompt}]
 
+    # 历史消息里的图片无法回传（落库的是本机 uploads URL，云端模型访问不到），
+    # 用一条 system 说明一次性告知，而不是往每条历史 content 里塞占位文字——
+    # 后者会被模型理解成"用户说过图片没传过来"，进而忽略当前轮真正附带的图片。
+    history_image_dropped = any(
+        getattr(m, "images", None) for m in (history_messages or [])
+        if any(isinstance(i, str) and not i.startswith("data:") for i in getattr(m, "images", None) or [])
+    )
+    if history_image_dropped:
+        messages.append({
+            "role": "system",
+            "content": "（说明：更早的对话中用户发过图片，但历史图片未随上下文传输，"
+                       "你只需回应本轮内容，不要声称用户没有发图。）",
+        })
+
     if history_messages:
         for m in history_messages[-12:]:
             role = _normalize_role(getattr(m, "role", None))
@@ -300,22 +314,37 @@ def _build_messages(
                 if not content:
                     continue
                 msg_images = getattr(m, "images", None)
-                if msg_images:
+                # 历史图片只保留 data URL（base64）。落库的 http://localhost/uploads/*
+                # 是开发机地址，云端模型访问不到，传过去会让整条请求 400
+                # 「图片输入格式/解析错误」，进而整条链降级成预设文案。
+                history_data_images = [
+                    img for img in (msg_images or [])
+                    if isinstance(img, str) and img.startswith("data:")
+                ]
+                if history_data_images:
                     parts: List[Dict] = [{"type": "text", "text": content}]
-                    for img_url in msg_images:
+                    for img_url in history_data_images:
                         parts.append({"type": "image_url", "image_url": {"url": img_url}})
                     messages.append({"role": role, "content": parts})
                 else:
+                    # 历史图片无法回传时不做任何拼接：把占位文字混进 content 会让模型
+                    # 以为"用户说过图片没传过来"，从而忽略当前这轮真正附带的图片。
                     messages.append({"role": role, "content": content})
 
-    # Build current user turn
-    if images:
+    # Build current user turn（只接受 data URL：云端模型无法访问 localhost 落盘地址）
+    data_images = [img for img in (images or []) if isinstance(img, str) and img.startswith("data:")]
+    if data_images:
         parts = [{"type": "text", "text": user_message or "请描述这张图片的内容。"}]
-        for img_url in images:
+        for img_url in data_images:
             parts.append({"type": "image_url", "image_url": {"url": img_url}})
         user_turn: Dict = {"role": "user", "content": parts}
     else:
-        user_turn = {"role": "user", "content": user_message}
+        # 有图片但都不是 data URL（例如误传了 localhost 落盘地址）时，
+        # 明确告知模型图片未能附带，避免它凭空编造图片内容。
+        text = user_message
+        if images and not text:
+            text = "（图片未能传输给模型，请让用户用文字描述）"
+        user_turn = {"role": "user", "content": text}
 
     last = messages[-1] if messages else None
     if not last or last.get("role") != "user":
@@ -443,9 +472,9 @@ async def health_check():
             "timestamp": datetime.utcnow().isoformat(),
             "llm_available": llm_client is not None,
             "vision_available": vision_client is not None,
-            "model": LLM_MODEL_MODEL,
-            "vision_model": LLM_VISION_MODEL,
-            "image_model": LLM_IMAGE_MODEL or None
+            "model": ZHIPU_MODEL,
+            "vision_model": ZHIPU_VISION_MODEL,
+            "image_model": ZHIPU_IMAGE_MODEL or None
         },
         timestamp=datetime.utcnow().isoformat()
     )
@@ -529,7 +558,7 @@ async def get_suggestions(request: SuggestionsRequest):
         )
 
         response = llm_client.chat.completions.create(
-            model=LLM_MODEL_MODEL,
+            model=ZHIPU_MODEL,
             messages=[
                 {"role": "system", "content": f"你是一个{personality}的AI伴侣对话助手。"},
                 {"role": "user", "content": prompt_text},
@@ -587,17 +616,17 @@ async def get_metrics():
 @app.post("/api/v1/ai/generate-avatar", tags=["AI"])
 async def generate_avatar(request: AvatarRequest):
     try:
-        # 仅当配置了远程图像模型（LLM_IMAGE_MODEL 非空）才调用；置空直接走本地 SVG 降级
-        if llm_client and LLM_IMAGE_MODEL:
+        # 仅当配置了远程图像模型（ZHIPU_IMAGE_MODEL 非空）才调用；置空直接走本地 SVG 降级
+        if llm_client and ZHIPU_IMAGE_MODEL:
             try:
                 prompt = f"可爱的动漫风格头像，{request.personality}，{request.description}，高清，高质量"
-                response = llm_client.images.generations.create(
-                    model=LLM_IMAGE_MODEL,
+                response = llm_client.images.generate(
+                    model=ZHIPU_IMAGE_MODEL,
                     prompt=prompt,
                     size="1024x1024"
                 )
                 avatar_url = response.data[0].url
-                print(f"Generated avatar using remote image model: {LLM_IMAGE_MODEL}")
+                print(f"Generated avatar using remote image model: {ZHIPU_IMAGE_MODEL}")
 
                 return APIResponse(
                     success=True,
@@ -613,7 +642,7 @@ async def generate_avatar(request: AvatarRequest):
         seed = f"{request.personality}-{request.description}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         label = (request.personality or "AI").strip()[:2]
         avatar_url = _svg_avatar_data_url(seed, label)
-        
+
         return APIResponse(
             success=True,
             message="Avatar generated successfully",
@@ -635,7 +664,22 @@ async def chat_langchain(request: ChatRequest):
     try:
         with tracer.measure("chat_langchain"):
             personality = _extract_personality(request.systemPrompt)
-            
+
+            # 带图请求绕过 LangChain Agent（同流式接口的原因：Agent 无法承载 image_url）
+            if request.images:
+                ai_response = generate_smart_response(
+                    request.userMessage,
+                    request.systemPrompt,
+                    request.messages,
+                    images=request.images,
+                )
+                return APIResponse(
+                    success=True,
+                    message="Chat generated successfully (Vision)",
+                    data={"content": ai_response, "engine": "vision"},
+                    timestamp=datetime.utcnow().isoformat(),
+                )
+
             # 格式化历史消息
             history = []
             for m in request.messages:
@@ -645,7 +689,7 @@ async def chat_langchain(request: ChatRequest):
                         "role": role,
                         "content": m.content
                     })
-            
+
             # 优先使用 LangChain
             if langchain_client:
                 try:
@@ -688,7 +732,21 @@ async def chat_langchain_stream(request: ChatRequest):
     async def generate():
         try:
             personality = _extract_personality(request.systemPrompt)
-            
+
+            # 带图请求绕过 LangChain Agent：Agent 的 HumanMessage 只承载纯文本，
+            # 无法传 image_url，图片会被静默丢弃（AI 会答"我没收到图片"）。
+            # 视觉理解用不上 Function Calling，直接走 stream_smart_response 的视觉路由。
+            # 代价：该条消息不触发记忆/知识库检索。
+            if request.images:
+                async for sse_chunk in stream_smart_response(
+                    request.userMessage,
+                    request.systemPrompt,
+                    request.messages,
+                    request.images
+                ):
+                    yield sse_chunk
+                return
+
             # 格式化历史消息
             history = []
             for m in request.messages:
@@ -698,7 +756,7 @@ async def chat_langchain_stream(request: ChatRequest):
                         "role": role,
                         "content": m.content
                     })
-            
+
             if langchain_client:
                 try:
                     async for chunk in langchain_client.chat_stream(

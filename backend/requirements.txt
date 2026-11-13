@@ -17,7 +17,7 @@ chromadb>=0.4.0
 # 联网搜索工具（web_search 依赖）
 ddgs>=9.0.0
 
-# OpenAI 兼容 SDK（文本链路 MiMo / 视觉链路 GPTCODEX 双客户端）
+# OpenAI 兼容 SDK（智谱 GLM 文本/视觉双客户端 + CogView 图像生成）
 openai>=1.40.0
 
 # 数据库驱动（按需安装一个即可）

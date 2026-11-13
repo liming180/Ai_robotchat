@@ -2,8 +2,9 @@
 RAG 知识库模块 —— 轻量检索增强生成（Retrieval-Augmented Generation）。
 
 设计要点：
-1. 当前两平台（MiMo / GPTCODEX）均无 Embedding 端点，使用本地哈希向量
-   （SimpleHashEmbeddings）做字符级相似度检索，零外部依赖、不会失败。
+1. 当前文本/视觉链路只用到智谱的对话与图像端点，未接入 Embedding API，
+   故使用本地哈希向量（SimpleHashEmbeddings）做字符级相似度检索，
+   零外部依赖、不会失败。
 2. 优先使用 Chroma 持久化向量库；Chroma 不可用时退化为内存文档列表。
 3. 文档按中文标点/换行切分，支持大段文本入库。
 4. 记忆数据与 MemoryService / user_memories 表互补：
@@ -47,7 +48,7 @@ class SimpleHashEmbeddings(Embeddings):
     """本地哈希向量 Embedding（无需任何远程 API）。
 
     把文本按字符级哈希映射到固定维度向量，用字符重叠近似语义相似度。
-    两平台均无 Embedding 端点时的默认实现——确定性强、零失败率，
+    未接入远程 Embedding API 时的默认实现——确定性强、零失败率，
     检索质量弱于语义 Embedding，但对短文本/关键词匹配足够可用。
     """
 
@@ -74,10 +75,10 @@ class SimpleHashEmbeddings(Embeddings):
 def build_embeddings(api_key: str = "", model: str = "") -> Embeddings:
     """构建 Embedding 实现。
 
-    两平台均无 Embedding 端点，直接使用本地哈希向量；
+    未配置远程 Embedding API，直接使用本地哈希向量；
     保留 api_key/model 形参以兼容旧调用方（未来接入远程 Embedding 时启用）。
     """
-    print("[RAG] 使用本地哈希向量 Embedding（两平台均无远程 Embedding 端点）")
+    print("[RAG] 使用本地哈希向量 Embedding（未接入远程 Embedding API）")
     return SimpleHashEmbeddings()
 
 

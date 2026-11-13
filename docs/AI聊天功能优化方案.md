@@ -8,7 +8,7 @@
 > |----------|------|------|
 > | 逐字流式输出 | ✅ 已落地（形态不同） | 实际采用 **SSE**（`POST /chat/stream`，`data:{"delta","done"}` 帧），非 WebSocket |
 > | 2.1 WebSocket 流式传输架构 | ❌ **不采用** | 全链路无 WebSocket；Java/前端仅有悬空提及，已确认仅保留 SSE |
-> | 双模型/多模型 | ✅ 已落地 | 文本 MiMo `mimo-v2.6-flash` + 视觉 GPTCODEX `gpt-6-luna`（2026-10-12 完成迁移） |
+> | 单平台多链路 | ✅ 已落地 | 智谱 GLM 单平台：`glm-4.5-air`（文本）+ `glm-4v-flash`（视觉）+ `cogview-4`（图像），共用同一 key（2026-11-13 定稿） |
 > | 三层降级保障 | ✅ 已落地 | LangChain agent → OpenAI SDK 直连 → `PRESET_RESPONSES` 预设库 |
 > | LangChain 接入 | ✅ 已落地（注意） | LangChain 1.x `create_agent`，但流式为**模拟流式**（全量生成后切块），非真增量 |
 > | 1.1 APM / Sentry / Prometheus | ⬜ 未实施 | 暂无外部 APM；Python 仅有 `/metrics` 简易指标端点 |

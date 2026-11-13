@@ -11,7 +11,7 @@ AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分�
 | 服务 | 目录 | 端口 | 技术栈 |
 | --- | --- | --- | --- |
 | 前端 | `frontend/` | 3000 | Vue 3 + TypeScript + Vite 5 + Pinia + Tailwind CSS |
-| Python AI 服务 | `backend/` | 5000 | FastAPI + 双模型（MiMo 文本 / GPTCODEX 视觉）+ LangChain 1.x |
+| Python AI 服务 | `backend/` | 5000 | FastAPI + 智谱 GLM（glm-4.5-air 文本 / glm-4v-flash 视觉 / cogview-4 图像）+ LangChain 1.x |
 | Java 业务后端 | `backend-java/` | 8080 | Spring Boot 3 + MyBatis Plus + MySQL |
 | RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + Chroma + 本地哈希向量 |
 
@@ -62,9 +62,9 @@ python main.py        # API 文档: http://localhost:8002/docs
 
 - `backend/main.py` 是单文件大入口：全部路由（聊天、流式、建议、头像、LangChain 聊天、记忆、心情、性能指标）都定义在这里。
 - **三层降级链**：LangChain 客户端 → OpenAI SDK 直连 → 预设回复库 `PRESET_RESPONSES`。任一层失败自动落到下一层，服务永不因 API 故障挂掉。
-- **双模型架构**（2026-10 起，全面移除智谱链路）：文本链路走小米 MiMo（`mimo-v2.6-flash`），带图片的请求路由到视觉链路 GPTCODEX 中转站（`gpt-6-luna`）；`LLM_IMAGE_MODEL` 置空时头像走本地 SVG 降级。两平台均 OpenAI 兼容协议，客户端为 `openai.OpenAI`。普通对话传 `extra_body={"thinking":{"type":"disabled"}}` 降延迟，LangChain 链路保留思考。
+- **单平台三链路**（2026-11-13 定稿为智谱 GLM 单平台）：文本 `glm-4.5-air`、视觉 `glm-4v-flash`、图像生成 `cogview-4`，共用 `ZHIPU_API_KEY`，base URL 均为 `https://open.bigmodel.cn/api/paas/v4`，客户端为 `openai.OpenAI`。`ZHIPU_IMAGE_MODEL` 置空时头像走本地 SVG 降级。**`glm-4.5-air` 是思考模型，普通对话必须传 `extra_body={"thinking":{"type":"disabled"}}`，否则 `max_tokens` 较小时 `content` 为空**；LangChain 链路保留思考。带图请求绕过 LangChain Agent 直接走视觉链路（Agent 的 `HumanMessage` 无法承载 `image_url`）。
 - **Redis 可选**：启动时探测，不可用则降级为进程内内存缓存（会话缓存 + 响应缓存）。
-- `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——两平台均无 Embedding 端点；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 双链路配置）、`avatar_store.py`。
+- `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——未接入远程 Embedding API；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 配置，字段名 `API_KEY`/`MODEL`/`VISION_*` 映射自 `ZHIPU_*` 环境变量）、`avatar_store.py`。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
 ### RAG 知识库服务（RAG-Knowledge-System/backend/）
@@ -86,7 +86,7 @@ python main.py        # API 文档: http://localhost:8002/docs
 
 ## 配置
 
-- `backend/.env`（已被 gitignore）：双链路变量 `LLM_MODEL_API_KEY`/`LLM_MODEL_BASE_URL`/`LLM_MODEL_MODEL`（文本 MiMo）、`LLM_VISION_API_KEY`/`LLM_VISION_BASE_URL`/`LLM_VISION_MODEL`（视觉 GPTCODEX）、`LLM_IMAGE_MODEL`（置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
+- `backend/.env`（已被 gitignore）：`ZHIPU_API_KEY`（文本/视觉/图像生成共用）、`ZHIPU_BASE_URL`、`ZHIPU_MODEL`（文本 `glm-4.5-air`）、`ZHIPU_VISION_MODEL`（视觉 `glm-4v-flash`）、`ZHIPU_IMAGE_MODEL`（图像 `cogview-4`，置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
 - `AI_INTEGRATION.md` — 双链路架构文档，密钥一律 `sk-***` 占位（历史版本曾含明文，git 历史中仍存留旧智谱密码，勿再引用）。
 - **Java 端密码注入**：`backend-java/application.yml` 的 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}` 环境变量占位，本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。
 - `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp` 等运行时/密钥文件；`RAG-Knowledge-System/backend/storage/uploads/` 上传数据同样不入库。
