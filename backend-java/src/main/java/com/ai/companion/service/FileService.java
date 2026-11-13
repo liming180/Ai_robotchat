@@ -13,4 +13,13 @@ public interface FileService {
      * @return 可访问的完整 URL
      */
     String upload(String dataUrl);
+
+    /**
+     * 保存已解码的图片字节（如从远程 URL 下载回来的头像），返回可访问的完整 URL。
+     *
+     * @param bytes       图片原始字节
+     * @param contentType 远程响应声明的类型，可为 null；实际以文件魔数为准
+     * @return 可访问的完整 URL
+     */
+    String saveImage(byte[] bytes, String contentType);
 }

@@ -201,8 +201,8 @@ import {
   Loader2
 } from 'lucide-vue-next'
 import { useCompanionStore } from '@/stores/companion'
-import { compressImageFileToDataUrl, createSvgAvatarDataUrl } from '@/lib/avatar'
-import { aiFetch, uploadImage } from '@/lib/api'
+import { compressImageFileToDataUrl, createSvgAvatarDataUrl, toJpegDataUrl } from '@/lib/avatar'
+import { javaFetch, uploadImage } from '@/lib/api'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
@@ -271,7 +271,7 @@ const generateAIAvatar = async () => {
   avatarNotice.value = ''
 
   try {
-    const data = await aiFetch<AvatarResponse>('/api/v1/ai/generate-avatar', {
+    const data = await javaFetch<AvatarResponse>('/api/v1/ai/generate-avatar', {
       method: 'POST',
       body: {
         personality: form.value.personality || '温柔体贴',
@@ -334,11 +334,11 @@ const createCompanion = async () => {
   }
 
   try {
-    // 头像不能存 base64（companion.avatar 是 VARCHAR(500)），先上传换成 URL
+    // 头像不能存 base64（companion.avatar 是 VARCHAR(500)），先上传换成 URL。
+    // 预设头像与降级头像都是 SVG，上传白名单只收位图，须先光栅化成 JPEG。
     let avatarUrl = form.value.avatar
-    if (avatarUrl?.startsWith('data:')) {
-      avatarUrl = await uploadImage(avatarUrl)
-    }
+    if (avatarUrl?.startsWith('data:image/svg')) avatarUrl = await toJpegDataUrl(avatarUrl)
+    if (avatarUrl?.startsWith('data:')) avatarUrl = await uploadImage(avatarUrl)
 
     await companionStore.createCompanion({
       name: form.value.name,

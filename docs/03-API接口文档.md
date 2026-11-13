@@ -307,11 +307,29 @@ Query 参数：`companionId`（可选）、`page`（默认 1）、`pageSize`（�
 ```json
 // 请求
 { "personality": "温柔体贴", "description": "可爱的动漫女孩，粉色头发" }
-// 响应 data
-{ "avatarUrl": "https://api.dicebear.com/9.x/adventurer/svg?seed=..." }
+
+// 响应 data（成功）
+{
+  "avatarUrl": "http://localhost:8081/uploads/2026-11/8b698c9f...jpg",
+  "fallback": false,
+  "fallbackReason": null,
+  "model": "cogview-4"
+}
+
+// 响应 data（降级：Python 不可用 / 未配模型 / 落盘失败）
+{
+  "avatarUrl": "https://api.dicebear.com/9.x/adventurer/svg?seed=217e0fd2-1794562737438",
+  "fallback": true,
+  "fallbackReason": "代理调用失败: ResourceAccessException",
+  "model": null
+}
 ```
 
-> ⚠️ **现状**：Java 端 `AIServiceImpl` 直接拼 dicebear URL 返回，并未调用 Python。真实 AI 生成在 Python 端（见下），收敛计划任务五将改为 Java 代理 Python。
+> **实现**：Java 代理 Python `POST /api/v1/ai/generate-avatar`，拿到 CogView 返回的**第三方临时直链**后立即下载并落盘到本站 `/uploads/`，对外只暴露稳定地址——直链带水印且会过期，直接存进 `companion.avatar` 会导致历史伴侣头像裂图。
+>
+> **降级契约**：任何失败都不抛异常、不返回 5xx，统一返回 `fallback=true` + `fallbackReason`，前端据此提示用户。`avatarUrl` 降级时为 dicebear，seed 用「人设 SHA-256 前 8 位 + 时间戳」，避免中文人设 URL 编码膨胀把 `VARCHAR(500)` 撑爆。
+>
+> **超时**：使用独立的 `avatarRestTemplate`（连接 30s / 读 60s），覆盖 CogView 出图 8~10s + 下载图片的时间；不可与聊天链路共用，否则会放宽聊天超时。
 
 ---
 

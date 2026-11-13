@@ -174,7 +174,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
-import { compressImageFileToDataUrl, createSvgAvatarDataUrl } from '@/lib/avatar'
+import { compressImageFileToDataUrl, createSvgAvatarDataUrl, toJpegDataUrl } from '@/lib/avatar'
 import { uploadImage } from '@/lib/api'
 
 const route = useRoute()
@@ -243,8 +243,10 @@ const saveSettings = async () => {
   saveError.value = ''
 
   try {
-    // 头像若是本地压缩的 base64，先上传换 URL（companion.avatar 只有 VARCHAR(500)）
+    // 头像若是本地压缩的 base64，先上传换 URL（companion.avatar 只有 VARCHAR(500)）。
+    // 历史数据里可能存过 SVG data URL，上传白名单不收 SVG，须先光栅化成 JPEG。
     let avatar = form.value.avatar
+    if (avatar?.startsWith('data:image/svg')) avatar = await toJpegDataUrl(avatar)
     if (avatar?.startsWith('data:')) avatar = await uploadImage(avatar)
 
     await companionStore.updateCompanion(route.params.id as string, {
