@@ -83,7 +83,7 @@
                 <span>{{ isGeneratingAvatar ? 'AI 生成中...' : 'AI 生成专属头像' }}</span>
               </button>
               <p class="text-xs text-gray-500 mt-2">
-                <strong>📌 开发说明：</strong>这里需要调用大模型 API 生成动漫风格头像，等你提供 API 密钥后完善。
+                将根据性格与描述生成头像；生成失败会自动使用本地矢量头像。
               </p>
             </div>
           </div>
@@ -171,6 +171,7 @@
 
           <!-- 提交按钮 -->
           <div class="form-submit">
+            <p v-if="submitError" class="submit-error" role="alert">{{ submitError }}</p>
             <button
               type="submit"
               :disabled="isCreating"
@@ -187,24 +188,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowUpRight,
   Camera,
   Heart,
   MessagesSquare,
-  Plus,
-  Search,
   Sparkles,
-  Settings,
   UserRound,
   Wand2,
   Loader2
 } from 'lucide-vue-next'
 import { useCompanionStore } from '@/stores/companion'
 import { compressImageFileToDataUrl, createSvgAvatarDataUrl } from '@/lib/avatar'
-import { aiFetch } from '@/lib/api'
+import { aiFetch, uploadImage } from '@/lib/api'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
@@ -262,7 +259,6 @@ const generateAIAvatar = async () => {
   isGeneratingAvatar.value = true
 
   try {
-    // 任务五（Java 代理）未完成，暂时直连 Python AI 服务
     const data = await aiFetch<{ avatarUrl?: string }>('/api/v1/ai/generate-avatar', {
       method: 'POST',
       body: {
@@ -291,8 +287,12 @@ const generateFallbackAvatar = () => {
   form.value.avatar = createSvgAvatarDataUrl({ seed, label })
 }
 
+const submitError = ref('')
+
 const createCompanion = async () => {
+  if (isCreating.value) return
   isCreating.value = true
+  submitError.value = ''
 
   // 处理标签
   const tags = tagsInput.value
@@ -313,31 +313,29 @@ const createCompanion = async () => {
     form.value.systemPrompt = prompts[form.value.personality as keyof typeof prompts] || prompts['温柔体贴']
   }
 
-  // 保存到 store
-  companionStore.addCustomCompanion({
-    name: form.value.name,
-    avatar: form.value.avatar,
-    category: form.value.category,
-    personality: form.value.personality,
-    description: form.value.description,
-    systemPrompt: form.value.systemPrompt,
-    tags
-  })
+  try {
+    // 头像不能存 base64（companion.avatar 是 VARCHAR(500)），先上传换成 URL
+    let avatarUrl = form.value.avatar
+    if (avatarUrl?.startsWith('data:')) {
+      avatarUrl = await uploadImage(avatarUrl)
+    }
 
-  // 稍微延迟一下让用户感知到进度
-  await new Promise(resolve => setTimeout(resolve, 500))
+    await companionStore.createCompanion({
+      name: form.value.name,
+      avatar: avatarUrl,
+      category: form.value.category,
+      personality: form.value.personality,
+      description: form.value.description,
+      systemPrompt: form.value.systemPrompt,
+      tags,
+    })
 
-  await nextTick()
-  if (companionStore.persistError) {
-    alert(companionStore.persistError)
+    router.push('/square')
+  } catch (e) {
+    submitError.value = `创建失败：${(e as Error).message}`
+  } finally {
     isCreating.value = false
-    return
   }
-
-  isCreating.value = false
-
-  // 跳转回广场
-  router.push('/')
 }
 </script>
 
@@ -674,6 +672,16 @@ const createCompanion = async () => {
 /* 提交按钮 */
 .form-submit {
   margin-top: 48px;
+}
+
+.submit-error {
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 8px;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.08);
+  font-size: 13px;
 }
 
 .submit-button {

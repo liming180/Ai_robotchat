@@ -1,6 +1,7 @@
 package com.ai.companion.controller;
 
 import com.ai.companion.common.Result;
+import com.ai.companion.dto.request.SendMessageRequest;
 import com.ai.companion.dto.response.ConversationDetailResponse;
 import com.ai.companion.dto.response.ConversationResponse;
 import com.ai.companion.service.ChatService;
@@ -59,16 +60,15 @@ public class ChatController {
     }
 
     @PostMapping("/conversations/{id}/messages")
-    @Operation(summary = "发送消息")
+    @Operation(summary = "发送消息",
+            description = "generate=true（默认）落 user 消息并同步调 AI；generate=false 只落库不调 AI，供流式聊天结束后回写")
     public Result<Map<String, Object>> sendMessage(
             Authentication authentication,
             @PathVariable String id,
-            @RequestBody Map<String, String> request
+            @RequestBody SendMessageRequest request
     ) {
         String userId = (String) authentication.getPrincipal();
-        String content = request.get("content");
-        String images = request.get("images");
-        Map<String, Object> result = chatService.sendMessage(userId, id, content, images);
+        Map<String, Object> result = chatService.sendMessage(userId, id, request);
         return Result.success("发送成功", result);
     }
 

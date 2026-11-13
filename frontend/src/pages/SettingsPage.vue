@@ -133,6 +133,9 @@
         </div>
 
         <!-- 保存按钮 -->
+        <p v-if="saveError" class="px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300" role="alert">
+          {{ saveError }}
+        </p>
         <div class="flex gap-4">
           <button
             @click="$router.back()"
@@ -168,21 +171,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
 import { compressImageFileToDataUrl, createSvgAvatarDataUrl } from '@/lib/avatar'
-import type { Companion } from '@/types'
+import { uploadImage } from '@/lib/api'
 
 const route = useRoute()
 const router = useRouter()
-const companionStore = useCompanionStore() as import('@/types/companion-store').CompanionsStore as any
+const companionStore = useCompanionStore()
 
 const isSaving = ref(false)
+const saveError = ref('')
 
-const companion = computed(() => {
-  return companionStore.getCompanionById(route.params.id as string)
-})
+const companion = computed(() => companionStore.getCompanionById(route.params.id as string))
 
 const form = ref({
   name: '',
@@ -193,17 +195,25 @@ const form = ref({
   systemPrompt: ''
 })
 
-onMounted(() => {
-  if (companion.value) {
-    form.value = {
-      name: companion.value.name,
-      avatar: companion.value.avatar,
-      category: companion.value.category,
-      personality: companion.value.personality,
-      description: companion.value.description,
-      systemPrompt: companion.value.systemPrompt
-    }
+const fillForm = (target: { name: string; avatar: string; category: string; personality: string; description: string; systemPrompt: string }) => {
+  form.value = {
+    name: target.name,
+    avatar: target.avatar,
+    category: target.category,
+    personality: target.personality,
+    description: target.description,
+    systemPrompt: target.systemPrompt,
   }
+}
+
+onMounted(async () => {
+  // 直链打开 /settings/:id 时列表可能还没加载，先补一次详情再填表单
+  if (!companion.value) {
+    const loaded = await companionStore.loadCompanion(route.params.id as string)
+    if (loaded) fillForm(loaded)
+    return
+  }
+  fillForm(companion.value)
 })
 
 const handleAvatarError = (e: Event) => {
@@ -228,29 +238,29 @@ const handleAvatarUpload = async (e: Event) => {
 }
 
 const saveSettings = async () => {
-  if (!companion.value) return
+  if (!companion.value || isSaving.value) return
   isSaving.value = true
-  
-  await new Promise(resolve => setTimeout(resolve, 800))
-  
-  // @ts-ignore
-companionStore.updateCompanion(route.params.id as string, {
-    name: form.value.name,
-    avatar: form.value.avatar,
-    category: form.value.category,
-    personality: form.value.personality,
-    description: form.value.description,
-    systemPrompt: form.value.systemPrompt
-  })
-  
-  await nextTick()
-  if (companionStore.persistError) {
-    alert(companionStore.persistError)
-    isSaving.value = false
-    return
-  }
+  saveError.value = ''
 
-  isSaving.value = false
-  router.back()
+  try {
+    // 头像若是本地压缩的 base64，先上传换 URL（companion.avatar 只有 VARCHAR(500)）
+    let avatar = form.value.avatar
+    if (avatar?.startsWith('data:')) avatar = await uploadImage(avatar)
+
+    await companionStore.updateCompanion(route.params.id as string, {
+      name: form.value.name,
+      avatar,
+      category: form.value.category,
+      personality: form.value.personality,
+      description: form.value.description,
+      systemPrompt: form.value.systemPrompt,
+    })
+    router.back()
+  } catch (e) {
+    // 预置伴侣会被后端拒绝（无权修改该伴侣），这里给出可读提示
+    saveError.value = `保存失败：${(e as Error).message}`
+  } finally {
+    isSaving.value = false
+  }
 }
 </script>

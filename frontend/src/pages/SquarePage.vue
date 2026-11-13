@@ -30,6 +30,8 @@
         </button>
       </section>
 
+      <p v-if="companionStore.error" class="data-hint" role="alert">{{ companionStore.error }}</p>
+
       <section class="discovery-tools" aria-label="搜索和筛选">
         <label class="search-box">
           <Search :size="20" />
@@ -175,9 +177,9 @@
 
         <div v-else class="empty-state">
           <span><SearchX :size="28" /></span>
-          <h3>暂时没有找到合适的伙伴</h3>
-          <p>换一个关键词，或者看看其他分类。</p>
-          <button type="button" @click="resetFilters">查看全部伴侣</button>
+          <h3>{{ companionStore.loading ? '正在加载伴侣…' : '暂时没有找到合适的伙伴' }}</h3>
+          <p>{{ companionStore.loading ? '正在从服务端获取数据，请稍候。' : '换一个关键词，或者看看其他分类。' }}</p>
+          <button v-if="!companionStore.loading" type="button" @click="resetFilters">查看全部伴侣</button>
         </div>
       </section>
     </main>
@@ -185,7 +187,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight,
@@ -211,7 +213,12 @@ const companionStore = useCompanionStore()
 
 const searchQuery = ref('')
 const selectedCategory = ref('全部')
-const categories = ['全部', '日常聊天', '学习助手', '娱乐陪伴']
+/** 分类由后端返回的数据去重生成（Java 预置分类是 日常聊天/知识问答/情感陪伴/趣味探索） */
+const categories = computed(() => companionStore.categories)
+
+onMounted(() => {
+  companionStore.loadCompanions()
+})
 
 const filteredCompanions = computed(() => {
   const categoryMatches = selectedCategory.value === '全部'
@@ -246,7 +253,15 @@ const categoryKey = (category: string) => {
 }
 
 const startChat = (companionId: string) => router.push(`/chat/${companionId}`)
-const toggleFavorite = (id: string) => companionStore.toggleFavorite(id)
+
+/** 收藏走后端；失败时提示，UI 状态由 store 以后端返回为准（不做乐观更新，避免失败后状态不一致） */
+const toggleFavorite = async (id: string) => {
+  try {
+    await companionStore.toggleFavorite(id)
+  } catch (e) {
+    companionStore.error = `收藏操作失败：${(e as Error).message}`
+  }
+}
 
 const resetFilters = () => {
   searchQuery.value = ''
@@ -419,6 +434,16 @@ const handleCompanionAvatarError = (event: Event) => {
   padding: 18px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.data-hint {
+  margin: 18px 0 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 139, 114, 0.35);
+  border-radius: 7px;
+  color: #ffb3a2;
+  background: rgba(255, 139, 114, 0.08);
+  font-size: 13px;
 }
 
 .search-box {

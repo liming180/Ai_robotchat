@@ -38,8 +38,8 @@
             <div class="stat-label">对话</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">{{ totalMessages }}</div>
-            <div class="stat-label">消息</div>
+            <div class="stat-value">{{ companionStore.favoriteCompanions.length }}</div>
+            <div class="stat-label">收藏</div>
           </div>
         </div>
       </section>
@@ -73,6 +73,36 @@
             <div class="menu-content">
               <h3>创建伴侣</h3>
               <p>自定义专属 AI</p>
+            </div>
+          </button>
+
+          <button @click="$router.push('/memory')" class="menu-item">
+            <div class="menu-icon">
+              <Brain :size="20" />
+            </div>
+            <div class="menu-content">
+              <h3>记忆管理</h3>
+              <p>AI 记住的关于你的事</p>
+            </div>
+          </button>
+
+          <button @click="$router.push('/calendar')" class="menu-item">
+            <div class="menu-icon">
+              <CalendarHeart :size="20" />
+            </div>
+            <div class="menu-content">
+              <h3>情绪日历</h3>
+              <p>查看心情变化轨迹</p>
+            </div>
+          </button>
+
+          <button @click="$router.push('/notes')" class="menu-item">
+            <div class="menu-icon">
+              <NotebookPen :size="20" />
+            </div>
+            <div class="menu-content">
+              <h3>随笔笔记</h3>
+              <p>收藏 AI 生成的内容</p>
             </div>
           </button>
 
@@ -169,14 +199,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
+  Brain,
+  CalendarHeart,
   Heart,
   MessagesSquare,
+  NotebookPen,
   Plus,
-  Search,
   Sparkles,
   Settings,
   UserRound,
@@ -192,15 +224,22 @@ const chatStore = useChatStore()
 const showSettings = ref(false)
 const favoriteCompanions = computed(() => companionStore.favoriteCompanions)
 
-const totalMessages = computed(() => {
-  return chatStore.conversations.reduce((acc, conv) => acc + conv.messages.length, 0)
+onMounted(() => {
+  companionStore.loadCompanions()
+  chatStore.loadConversations()
 })
 
 const startChat = (companionId: string) => {
   router.push(`/chat/${companionId}`)
 }
 
-const toggleFavorite = (id: string) => companionStore.toggleFavorite(id)
+const toggleFavorite = async (id: string) => {
+  try {
+    await companionStore.toggleFavorite(id)
+  } catch (e) {
+    companionStore.error = `收藏操作失败：${(e as Error).message}`
+  }
+}
 
 const handleCompanionAvatarError = (e: Event) => {
   const img = e.target as HTMLImageElement

@@ -105,6 +105,15 @@
       <div class="flex-1 overflow-y-auto" ref="messagesContainer">
         <div class="max-w-3xl mx-auto px-4 py-6 space-y-4">
 
+          <!-- 数据/落库异常提示（不打断聊天） -->
+          <p
+            v-if="dataWarning || chatStore.error"
+            class="px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300"
+            role="alert"
+          >
+            {{ dataWarning || chatStore.error }}
+          </p>
+
           <!-- 欢迎屏 -->
           <Transition name="welcome">
             <div v-if="chatStore.currentMessages.length === 0" class="flex flex-col items-center justify-center py-16 text-center select-none">
@@ -330,12 +339,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
 import { useChatStore } from '@/stores/chat'
 import { useUserStore } from '@/stores/user'
 import { createSvgAvatarDataUrl } from '@/lib/avatar'
+import { uploadImage } from '@/lib/api'
 import { useStreamingChat } from '@/composables/useStreamingChat'
 
 const route = useRoute()
@@ -453,19 +463,36 @@ const scrollToBottom = (smooth = false) => {
   })
 }
 
-const selectConversation = (id: string) => {
+const selectConversation = async (id: string) => {
   chatStore.selectConversation(id, companionId.value)
   scrollToBottom()
+  try {
+    await chatStore.loadMessages(id)
+    scrollToBottom(true)
+    if (chatStore.currentMessages.length) refreshSuggestions()
+  } catch (e) {
+    chatStore.error = `历史消息加载失败：${(e as Error).message}`
+  }
 }
 
+/**
+ * 新对话（懒创建）：只清空当前选择，不发请求。
+ * 首次发送消息时才 POST /conversations，避免侧栏堆一堆空的「新对话」。
+ */
 const createNewConversation = () => {
-  chatStore.createConversation(companionId.value)
-  scrollToBottom()
+  chatStore.startDraft()
+  messageInput.value = ''
+  pendingImages.value = []
+  autoResize()
 }
 
-const deleteConversation = (id: string) => {
-  if (confirm('删除这个对话？')) {
-    chatStore.deleteConversation(id)
+const deleteConversation = async (id: string) => {
+  if (!confirm('删除这个对话？')) return
+  try {
+    await chatStore.deleteConversation(id)
+    scrollToBottom()
+  } catch (e) {
+    chatStore.error = `删除对话失败：${(e as Error).message}`
   }
 }
 
@@ -482,6 +509,18 @@ const handleAvatarError = (e: Event) => {
   img.src = createSvgAvatarDataUrl({ seed: `${currentCompanion.value?.id}-${label}`, label })
 }
 
+/** 落库失败等非致命错误只在页面顶部提示，不打断聊天 */
+const dataWarning = ref('')
+
+/**
+ * 把待发送的图片（base64）逐张上传到 Java 换 URL。
+ * 图片双轨：base64 给 Python 视觉链路，URL 落 MySQL（message.images 只存 URL 数组）。
+ */
+const uploadPendingImages = async (images?: string[]): Promise<string[]> => {
+  if (!images?.length) return []
+  return Promise.all(images.map(src => (src.startsWith('data:') ? uploadImage(src) : src)))
+}
+
 // ── Core fix: single isTyping flag + streamingContent, no placeholder bubbles ──
 const sendMessage = async () => {
   if ((!messageInput.value.trim() && !pendingImages.value.length) || isTyping.value || !currentCompanion.value) return
@@ -492,16 +531,31 @@ const sendMessage = async () => {
   pendingImages.value = []
   autoResize()
 
-  if (!chatStore.currentConversation || chatStore.currentConversation.companionId !== companionId.value) {
-    chatStore.createConversation(companionId.value)
-  }
-
-  chatStore.addMessage(chatStore.currentConversationId, 'user', content, images)
   isTyping.value = true
   resetStream()
-  scrollToBottom(true)
+  dataWarning.value = ''
+
+  let assistantReply = ''
 
   try {
+    // 懒创建：会话不存在时用首条消息做标题，只建一次
+    const conversation = await chatStore.ensureConversation(
+      companionId.value,
+      chatStore.deriveTitle(content, images),
+    )
+    const conversationId = conversation.id
+
+    chatStore.addMessage(conversationId, 'user', content, images)
+
+    // 上传图片（失败不阻塞聊天：内存里仍用 base64 展示，只是这次不落 URL）
+    let imageUrls: string[] = []
+    try {
+      imageUrls = await uploadPendingImages(images)
+    } catch (uploadError) {
+      dataWarning.value = `图片上传失败，本次消息的图片不会同步到服务端：${(uploadError as Error).message}`
+    }
+    scrollToBottom(true)
+
     const history = chatStore.currentMessages.slice(-13, -1).map(m => ({
       role: m.role,
       content: m.content,
@@ -509,7 +563,7 @@ const sendMessage = async () => {
     }))
     const systemPrompt = currentCompanion.value.systemPrompt || '你是一个温柔体贴的AI伴侣。'
 
-    const reply = await sendStreaming(
+    assistantReply = await sendStreaming(
       content,
       systemPrompt,
       history,
@@ -519,8 +573,21 @@ const sendMessage = async () => {
       userStore.userId
     )
 
-    chatStore.addMessage(chatStore.currentConversationId, 'assistant', reply)
-    companionStore.increaseIntimacy(companionId.value, 2)
+    chatStore.addMessage(conversationId, 'assistant', assistantReply)
+
+    // 流式结束后落库：user + assistant 两条，generate=false 只落库不调 AI（P0-5 方案 A）
+    try {
+      await chatStore.saveMessages(
+        conversationId,
+        { content, images: imageUrls },
+        { content: assistantReply },
+      )
+    } catch (saveError) {
+      dataWarning.value = `消息已显示，但保存到服务端失败（刷新后会丢失）：${(saveError as Error).message}`
+    }
+
+    // 亲密度失败不影响聊天
+    companionStore.increaseIntimacy(companionId.value, 2).catch(() => undefined)
 
     // Refresh context-aware suggestions after each exchange
     refreshSuggestions()
@@ -542,8 +609,22 @@ const sendMessage = async () => {
       }
     }
 
-    chatStore.addMessage(chatStore.currentConversationId, 'assistant', errorMessage)
-    companionStore.increaseIntimacy(companionId.value, 1)
+    // 流式失败：把错误气泡显示出来，并只落 user 消息（assistant 没有内容可落）
+    if (chatStore.currentConversationId) {
+      chatStore.addMessage(chatStore.currentConversationId, 'assistant', errorMessage)
+      try {
+        const imageUrls = await uploadPendingImages(images).catch(() => [] as string[])
+        await chatStore.saveMessage(chatStore.currentConversationId, 'user', content, imageUrls)
+      } catch {
+        // 落库失败不覆盖原始错误提示
+      }
+    } else {
+      // 会话都没建成（Java 不可用）：把输入还原给用户，避免内容凭空消失
+      messageInput.value = content
+      pendingImages.value = images ? [...images] : []
+      dataWarning.value = `无法创建对话：${error instanceof Error ? error.message : String(error)}`
+    }
+    companionStore.increaseIntimacy(companionId.value, 1).catch(() => undefined)
   } finally {
     isTyping.value = false
     resetStream()
@@ -579,17 +660,39 @@ const formatDate = (date: Date) => {
   return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
-onMounted(() => {
-  if (!currentCompanion.value) { router.push('/'); return }
+/** 进入聊天页：补伴侣详情 → 拉该伴侣的会话 → 选中最近一条并加载消息 */
+const initConversation = async () => {
+  if (!companionStore.getCompanionById(companionId.value)) {
+    const companion = await companionStore.loadCompanion(companionId.value)
+    if (!companion) {
+      router.push('/square')
+      return
+    }
+  }
+  try {
+    await chatStore.loadConversations(companionId.value)
+  } catch (e) {
+    chatStore.error = `会话列表加载失败：${(e as Error).message}`
+  }
+
   chatStore.setCompanionConversation(companionId.value)
+  if (chatStore.currentConversationId) {
+    await selectConversation(chatStore.currentConversationId)
+  }
   scrollToBottom()
-  // Initial suggestions refresh if there's existing conversation
-  if (chatStore.currentMessages.length) refreshSuggestions()
+}
+
+onMounted(() => {
+  initConversation()
 })
 
-watch(companionId, newId => {
-  if (currentCompanion.value) {
-    chatStore.setCompanionConversation(newId)
+watch(companionId, async newId => {
+  if (!newId || !companionStore.getCompanionById(newId)) return
+  await chatStore.loadConversations(newId)
+  chatStore.setCompanionConversation(newId)
+  if (chatStore.currentConversationId) {
+    await selectConversation(chatStore.currentConversationId)
+  } else {
     scrollToBottom()
   }
 })

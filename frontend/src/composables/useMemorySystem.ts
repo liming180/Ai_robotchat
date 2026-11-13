@@ -9,7 +9,11 @@ export function useMemorySystem() {
   const selectedCategory = ref<string>('all')
   const searchQuery = ref<string>('')
   const showForm = ref(false)
-  const editingId = ref<string | null>(null)
+  /** 本轮只支持新增：Python 端没有 update 端点，编辑入口不展示 */
+  const canEdit = false
+  const saving = ref(false)
+  const saveError = ref('')
+
   const newMemory = ref<{ type: MemoryType; content: string }>({ type: 'preference', content: '' })
 
   const memoryCategories: MemoryCategory[] = MEMORY_CATEGORIES
@@ -20,10 +24,7 @@ export function useMemorySystem() {
       : memories.value.filter(m => m.type === selectedCategory.value)
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase()
-      list = list.filter(m =>
-        m.content.toLowerCase().includes(q) ||
-        m.type.toLowerCase().includes(q)
-      )
+      list = list.filter(m => m.content.toLowerCase().includes(q))
     }
     return list
   })
@@ -33,58 +34,55 @@ export function useMemorySystem() {
       ? memories.value.length
       : memoryStore.getCountByCategory(categoryId as MemoryType)
 
+  const load = () => memoryStore.loadMemories()
+
   const openAddForm = () => {
-    editingId.value = null
     newMemory.value = { type: 'preference', content: '' }
+    saveError.value = ''
     showForm.value = true
   }
 
-  const openEditForm = (memory: Memory) => {
-    editingId.value = memory.id
-    newMemory.value = { type: memory.type, content: memory.content }
-    showForm.value = true
-  }
-
-  const saveMemory = () => {
-    if (!newMemory.value.content.trim()) return
-    if (editingId.value) {
-      memoryStore.updateMemory(editingId.value, {
+  /** 新增记忆：写 Python 后端，失败时在表单内提示，不关闭表单 */
+  const saveMemory = async () => {
+    if (!newMemory.value.content.trim() || saving.value) return
+    saving.value = true
+    saveError.value = ''
+    try {
+      await memoryStore.addMemory({
         type: newMemory.value.type,
         content: newMemory.value.content.trim(),
       })
-    } else {
-      memoryStore.addMemory({
-        type: newMemory.value.type,
-        content: newMemory.value.content.trim(),
-      })
+      showForm.value = false
+      newMemory.value = { type: 'preference', content: '' }
+    } catch (e) {
+      saveError.value = `保存失败：${(e as Error).message}`
+    } finally {
+      saving.value = false
     }
-    showForm.value = false
-    editingId.value = null
-  }
-
-  const deleteMemory = (id: string) => {
-    memoryStore.deleteMemory(id)
   }
 
   const searchMemories = (query: string) => memoryStore.searchMemories(query)
 
-  const getPersonalizedPrompt = (companionId?: string) =>
-    memoryStore.getPersonalizedPrompt(companionId)
+  const getPersonalizedPrompt = () => memoryStore.getPersonalizedPrompt()
 
   return {
     memories,
     selectedCategory,
     searchQuery,
     showForm,
-    editingId,
+    canEdit,
+    saving,
+    saveError,
     newMemory,
     memoryCategories,
+    loading: computed(() => memoryStore.loading),
+    error: computed(() => memoryStore.error),
+    fromCache: computed(() => memoryStore.fromCache),
     filteredMemories,
     getMemoryCount,
+    load,
     openAddForm,
-    openEditForm,
     saveMemory,
-    deleteMemory,
     searchMemories,
     getPersonalizedPrompt,
   }

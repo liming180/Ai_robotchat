@@ -1,18 +1,16 @@
 import { defineStore } from 'pinia'
-import { ref, onMounted, watch } from 'vue'
+import { ref } from 'vue'
 import type { EmotionType, EmotionRecord, EmotionStats } from '@/types'
-import { isQuotaExceededError } from '@/lib/avatar'
+import { aiFetch } from '@/lib/api'
+import { useUserStore } from '@/stores/user'
 
-const STORAGE_KEY = 'ai-emotion-records'
+/**
+ * 情绪数据归属 = Python AI 服务（SQLite `user_moods`，P0-6 决策）。
+ * Python 侧字段是自由文本：mood(中文/英文) + score(1-10) + note，
+ * 前端内部统一用 EmotionType + intensity(0-100)，边界处做映射。
+ */
 
-// 情绪关键词词典（客户端启发式分析，便于将来替换为后端接口）
-const EMOTION_KEYWORDS: Record<EmotionType, string[]> = {
-  happy: ['开心', '高兴', '快乐', '幸福', '兴奋', '嘻嘻', '哈哈', '好耶', '棒', '太好了', '喜欢', '😄', '😊', '😍', '🥰', '❤'],
-  sad: ['难过', '伤心', '悲伤', '郁闷', '失落', '心痛', '难受', '想哭', '哭', '孤独', '😢', '😭', '💔'],
-  angry: ['生气', '愤怒', '气死', '烦死', '讨厌', '烦躁', '可恶', '抓狂', '😠', '😡', '怒'],
-  anxious: ['焦虑', '紧张', '担心', '害怕', '不安', '压力', '焦急', '恐惧', '心慌', '😰', '😨'],
-  neutral: [],
-}
+const CACHE_KEY = 'ai-emotion-records'
 
 const EMOTION_META: Record<EmotionType, { label: string; icon: string; color: string }> = {
   happy: { label: '快乐', icon: '😊', color: 'from-amber-400 to-yellow-500' },
@@ -22,99 +20,152 @@ const EMOTION_META: Record<EmotionType, { label: string; icon: string; color: st
   neutral: { label: '平静', icon: '😐', color: 'from-slate-400 to-slate-500' },
 }
 
-const serialize = (r: EmotionRecord) => ({ ...r, timestamp: r.timestamp.toISOString() })
-const deserialize = (d: any): EmotionRecord => ({ ...d, timestamp: new Date(d.timestamp) })
+const EMOTION_LABELS: Record<EmotionType, string> = {
+  happy: '开心',
+  sad: '难过',
+  angry: '生气',
+  anxious: '焦虑',
+  neutral: '平静',
+}
+
+/** Python 里可能是中文（示例数据风格）也可能是英文（模型注释风格），双向兜住 */
+const MOOD_ALIASES: Record<string, EmotionType> = {
+  happy: 'happy', 开心: 'happy', 快乐: 'happy', 兴奋: 'happy', good: 'happy',
+  sad: 'sad', 难过: 'sad', 悲伤: 'sad', 失落: 'sad', tired: 'sad', 疲惫: 'sad',
+  angry: 'angry', 生气: 'angry', 愤怒: 'angry', 烦躁: 'angry',
+  anxious: 'anxious', 焦虑: 'anxious', 紧张: 'anxious', 担心: 'anxious',
+  neutral: 'neutral', calm: 'neutral', 平静: 'neutral', ok: 'neutral', normal: 'neutral',
+}
+
+const toEmotionType = (mood?: string | null): EmotionType => {
+  const key = (mood || '').trim().toLowerCase()
+  return MOOD_ALIASES[key] ?? MOOD_ALIASES[(mood || '').trim()] ?? 'neutral'
+}
+
+/** Python `GET /api/v1/mood/{userId}` 的单条结构 */
+interface MoodDto {
+  id: string | number
+  userId: string
+  mood?: string | null
+  score?: number | null
+  note?: string | null
+  createdAt?: string | null
+}
+
+const toRecord = (dto: MoodDto): EmotionRecord => {
+  const score = typeof dto.score === 'number' ? dto.score : 5
+  return {
+    id: String(dto.id),
+    emotion: toEmotionType(dto.mood),
+    // score 是 1-10，前端强度按 0-100 展示
+    intensity: Math.max(0, Math.min(100, Math.round(score * 10))),
+    content: dto.note || '',
+    timestamp: dto.createdAt ? new Date(dto.createdAt) : new Date(),
+  }
+}
 
 export const useEmotionStore = defineStore('emotion', () => {
   const records = ref<EmotionRecord[]>([])
   const currentEmotion = ref<EmotionType>('neutral')
-  const persistError = ref<string>('')
+  const loading = ref(false)
+  const error = ref('')
+  const fromCache = ref(false)
 
-  onMounted(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      try {
-        records.value = JSON.parse(saved).map(deserialize)
-      } catch (error) {
-        console.error('Failed to load emotion records:', error)
-      }
-    }
-  })
-
-  watch(records, (newVal) => {
+  const readCache = (): EmotionRecord[] => {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return []
     try {
-      persistError.value = ''
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newVal.map(serialize)))
-    } catch (error) {
-      if (isQuotaExceededError(error)) {
-        persistError.value = '本地存储空间不足，情绪记录保存失败。请清理部分数据后重试。'
+      const list = JSON.parse(raw)
+      return Array.isArray(list)
+        ? list.map((r: any) => ({
+            id: String(r.id),
+            emotion: (r.emotion as EmotionType) || 'neutral',
+            intensity: Number(r.intensity) || 0,
+            content: r.content || '',
+            timestamp: new Date(r.timestamp ?? Date.now()),
+          }))
+        : []
+    } catch {
+      localStorage.removeItem(CACHE_KEY)
+      return []
+    }
+  }
+
+  const writeCache = () => {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(records.value.map(r => ({
+        ...r,
+        timestamp: r.timestamp.toISOString(),
+      }))))
+    } catch {
+      // 缓存失败不影响主流程
+    }
+  }
+
+  async function loadMoods(days = 30): Promise<void> {
+    const userId = useUserStore().userId
+    if (!userId) {
+      records.value = []
+      return
+    }
+
+    loading.value = true
+    try {
+      const data = await aiFetch<{ moods?: MoodDto[] }>(`/api/v1/mood/${userId}?days=${days}`)
+      records.value = (data?.moods || []).map(toRecord)
+      currentEmotion.value = records.value[0]?.emotion ?? 'neutral'
+      error.value = ''
+      fromCache.value = false
+      writeCache()
+    } catch (e) {
+      const cached = readCache()
+      if (cached.length) {
+        records.value = cached
+        fromCache.value = true
+        error.value = `情绪记录加载失败，正在显示本地缓存：${(e as Error).message}`
       } else {
-        persistError.value = '情绪记录保存失败，请稍后重试。'
+        error.value = `情绪记录加载失败：${(e as Error).message}`
       }
-      console.error('Failed to save emotion records:', error)
+    } finally {
+      loading.value = false
     }
-  }, { deep: true })
-
-  // 客户端关键词启发式情绪分析
-  const analyzeText = (text: string): { emotion: EmotionType; intensity: number } => {
-    const lower = text.toLowerCase()
-    const scores: Record<EmotionType, number> = { happy: 0, sad: 0, angry: 0, anxious: 0, neutral: 0 }
-
-    for (const emotion of Object.keys(EMOTION_KEYWORDS) as EmotionType[]) {
-      for (const kw of EMOTION_KEYWORDS[emotion]) {
-        if (lower.includes(kw.toLowerCase())) scores[emotion] += 1
-      }
-    }
-    // 感叹号增强情绪强度
-    const exclamations = (text.match(/!/g) || []).length
-    if (exclamations) scores.neutral += 0
-
-    let best: EmotionType = 'neutral'
-    let bestScore = 0
-    for (const emotion of Object.keys(scores) as EmotionType[]) {
-      if (scores[emotion] > bestScore) {
-        bestScore = scores[emotion]
-        best = emotion
-      }
-    }
-
-    const intensity = best === 'neutral'
-      ? 30
-      : Math.min(100, 50 + bestScore * 15 + exclamations * 5)
-    return { emotion: best, intensity }
   }
 
-  const recordEmotion = (emotion: EmotionType, intensity: number, content: string) => {
-    records.value.unshift({
-      id: Date.now().toString(),
-      emotion,
-      intensity,
-      content: content.slice(0, 200),
-      timestamp: new Date(),
+  /** 记录一条心情：写 Python 成功后插入列表 */
+  async function recordEmotion(emotion: EmotionType, intensity: number, content = ''): Promise<EmotionRecord> {
+    const userId = useUserStore().userId
+    if (!userId) throw new Error('未登录，无法记录心情')
+
+    const score = Math.max(1, Math.min(10, intensity / 10))
+    const dto = await aiFetch<MoodDto>('/api/v1/mood', {
+      method: 'POST',
+      body: {
+        userId,
+        mood: EMOTION_LABELS[emotion],
+        score: Number(score.toFixed(1)),
+        note: content.trim() || null,
+      },
     })
-    currentEmotion.value = emotion
-  }
 
-  // 分析并记录一条情绪
-  const analyzeAndRecord = (text: string) => {
-    const { emotion, intensity } = analyzeText(text)
-    recordEmotion(emotion, intensity, text)
-    return emotion
+    const record = toRecord(dto)
+    record.emotion = emotion
+    records.value.unshift(record)
+    currentEmotion.value = emotion
+    writeCache()
+    return record
   }
 
   // 按天聚合：返回 { 'YYYY-MM-DD': 主导情绪 }
   const getCalendarData = (year: number, month: number): Record<string, EmotionType> => {
-    const monthRecords = records.value.filter(r => {
-      const d = r.timestamp
-      return d.getFullYear() === year && d.getMonth() === month
-    })
-    // 按天聚合情绪频次
     const dayMap: Record<string, Record<EmotionType, number>> = {}
-    for (const record of monthRecords) {
-      const key = record.timestamp.toISOString().slice(0, 10)
+    for (const record of records.value) {
+      const d = record.timestamp
+      if (d.getFullYear() !== year || d.getMonth() !== month) continue
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       if (!dayMap[key]) dayMap[key] = { happy: 0, sad: 0, angry: 0, anxious: 0, neutral: 0 }
       dayMap[key][record.emotion] += 1
     }
+
     const result: Record<string, EmotionType> = {}
     for (const [day, counts] of Object.entries(dayMap)) {
       let best: EmotionType = 'neutral'
@@ -132,9 +183,8 @@ export const useEmotionStore = defineStore('emotion', () => {
 
   const getStats = (): EmotionStats => {
     const distribution: Record<EmotionType, number> = { happy: 0, sad: 0, angry: 0, anxious: 0, neutral: 0 }
-    for (const record of records.value) {
-      distribution[record.emotion] += 1
-    }
+    for (const record of records.value) distribution[record.emotion] += 1
+
     let dominant: EmotionType = 'neutral'
     let dominantCount = -1
     for (const emotion of Object.keys(distribution) as EmotionType[]) {
@@ -146,18 +196,21 @@ export const useEmotionStore = defineStore('emotion', () => {
     return { total: records.value.length, dominant, distribution }
   }
 
-  const deleteRecord = (id: string) => {
-    records.value = records.value.filter(r => r.id !== id)
+  /** 二期能力：Python 端无删除端点 */
+  function deleteRecord(): never {
+    throw new Error('情绪记录删除暂未开放（后端未提供删除接口）')
   }
 
   return {
     records,
     currentEmotion,
-    persistError,
+    loading,
+    error,
+    fromCache,
     emotionMeta: EMOTION_META,
-    analyzeText,
+    emotionLabels: EMOTION_LABELS,
+    loadMoods,
     recordEmotion,
-    analyzeAndRecord,
     getCalendarData,
     getStats,
     deleteRecord,

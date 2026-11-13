@@ -18,11 +18,11 @@ export function useEmotionAnalysis() {
   const emotionHistory = computed<EmotionRecord[]>(() => emotionStore.records)
   const emotionSuggestions = computed<string[]>(() => SUGGESTIONS[emotionStore.currentEmotion])
 
-  const analyzeEmotion = (text: string) => {
-    const { emotion, intensity } = emotionStore.analyzeText(text)
-    emotionStore.recordEmotion(emotion, intensity, text)
-    return emotion
-  }
+  const load = (days = 30) => emotionStore.loadMoods(days)
+
+  /** 记录一条心情（写 Python），由情绪日历页的极简输入触发 */
+  const recordEmotion = (emotion: EmotionType, intensity: number, content = '') =>
+    emotionStore.recordEmotion(emotion, intensity, content)
 
   const getEmotionSuggestions = (emotion: EmotionType) => SUGGESTIONS[emotion] || []
 
@@ -36,7 +36,12 @@ export function useEmotionAnalysis() {
     emotionHistory,
     emotionSuggestions,
     emotionMeta: emotionStore.emotionMeta,
-    analyzeEmotion,
+    emotionLabels: emotionStore.emotionLabels,
+    loading: computed(() => emotionStore.loading),
+    error: computed(() => emotionStore.error),
+    fromCache: computed(() => emotionStore.fromCache),
+    load,
+    recordEmotion,
     getEmotionSuggestions,
     getEmotionCalendarData,
     getEmotionStats,

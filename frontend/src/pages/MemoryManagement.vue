@@ -20,6 +20,10 @@
     </nav>
 
     <div class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <p v-if="error" class="px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-amber-300" role="alert">
+        {{ error }}
+      </p>
+
       <!-- 分类卡片 -->
       <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
         <h3 class="text-lg font-semibold text-white mb-4">记忆分类</h3>
@@ -73,23 +77,9 @@
                   {{ memoryCategories.find(c => c.id === memory.type)?.name }} · {{ formatDate(memory.createdAt) }}
                 </div>
               </div>
+              <!-- 编辑/删除需要 Python 端提供 update/delete 接口，本轮（任务四）只做新增，二期开放 -->
               <div class="flex gap-2">
-                <button
-                  @click="openEditForm(memory)"
-                  class="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-all"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                  </svg>
-                </button>
-                <button
-                  @click="deleteMemory(memory.id)"
-                  class="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-red-400 transition-all"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                  </svg>
-                </button>
+                <span class="text-xs text-slate-600 self-center">只读</span>
               </div>
             </div>
           </div>
@@ -104,9 +94,7 @@
 
       <!-- 新增/编辑表单 -->
       <div v-if="showForm" class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">
-          {{ editingId ? '编辑记忆' : '新增记忆' }}
-        </h3>
+        <h3 class="text-lg font-semibold text-white mb-4">新增记忆</h3>
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">记忆类型</label>
@@ -128,12 +116,14 @@
               class="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:border-violet-500/40 resize-none"
             ></textarea>
           </div>
+          <p v-if="saveError" class="text-sm text-red-300" role="alert">{{ saveError }}</p>
           <div class="flex gap-3">
             <button
               @click="saveMemory"
-              class="flex-1 px-4 py-2 bg-gradient-to-r from-violet-600 to-pink-500 rounded-xl text-white font-medium hover:opacity-90 transition-all"
+              :disabled="saving || !newMemory.content.trim()"
+              class="flex-1 px-4 py-2 bg-gradient-to-r from-violet-600 to-pink-500 rounded-xl text-white font-medium hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              保存
+              {{ saving ? '保存中...' : '保存' }}
             </button>
             <button
               @click="showForm = false"
@@ -149,28 +139,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted } from 'vue'
 import { useMemorySystem } from '@/composables/useMemorySystem'
-import { createSvgAvatarDataUrl } from '@/lib/avatar'
 
-const router = useRouter()
 const {
-  memories,
   memoryCategories,
   selectedCategory,
   searchQuery,
   showForm,
-  editingId,
+  saving,
+  saveError,
   newMemory,
   filteredMemories,
   getMemoryCount,
+  load,
   openAddForm,
-  openEditForm,
   saveMemory,
-  deleteMemory,
-  searchMemories,
+  error,
 } = useMemorySystem()
+
+onMounted(() => {
+  load()
+})
 
 const formatDate = (date: Date) => {
   const diff = Date.now() - date.getTime()

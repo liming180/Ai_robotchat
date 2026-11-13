@@ -8,6 +8,9 @@ import HomePage from '@/pages/HomePage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import HistoryPage from '@/pages/HistoryPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
+import MemoryManagement from '@/pages/MemoryManagement.vue'
+import EmotionCalendar from '@/pages/EmotionCalendar.vue'
+import NotesPage from '@/pages/NotesPage.vue'
 
 const routes = [
   {
@@ -49,6 +52,21 @@ const routes = [
     path: '/settings/:id',
     name: 'settings',
     component: SettingsPage,
+  },
+  {
+    path: '/memory',
+    name: 'memory',
+    component: MemoryManagement,
+  },
+  {
+    path: '/calendar',
+    name: 'calendar',
+    component: EmotionCalendar,
+  },
+  {
+    path: '/notes',
+    name: 'notes',
+    component: NotesPage,
   },
 ]
 

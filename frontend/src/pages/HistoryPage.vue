@@ -55,6 +55,10 @@
     </div>
 
     <div class="max-w-4xl mx-auto px-6 py-8">
+      <p v-if="chatStore.error" class="mb-6 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300" role="alert">
+        {{ chatStore.error }}
+      </p>
+
       <div v-if="groupedConversations.length > 0" class="space-y-8">
         <div v-for="group in groupedConversations" :key="group.date" class="space-y-4">
           <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">{{ group.date }}</h3>
@@ -135,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useCompanionStore } from '@/stores/companion'
@@ -147,6 +151,14 @@ const companionStore = useCompanionStore()
 const searchQuery = ref('')
 const selectedTime = ref('all')
 const showClearConfirm = ref(false)
+
+onMounted(async () => {
+  // 历史页需要消息内容做预览与搜索，因此带 messages 拉全量
+  await Promise.all([
+    companionStore.loadCompanions(),
+    chatStore.loadConversations(undefined, true),
+  ])
+})
 
 const filteredConversations = computed(() => {
   let conversations = [...chatStore.conversations].sort((a, b) => 
@@ -241,14 +253,27 @@ const openConversation = (conversation: typeof chatStore.conversations[0]) => {
   router.push(`/chat/${conversation.companionId}`)
 }
 
-const deleteConversation = (id: string) => {
-  if (confirm('确定要删除这个对话吗？')) {
-    chatStore.deleteConversation(id)
+const deleteConversation = async (id: string) => {
+  if (!confirm('确定要删除这个对话吗？')) return
+  try {
+    await chatStore.deleteConversation(id)
+  } catch (e) {
+    chatStore.error = `删除对话失败：${(e as Error).message}`
   }
 }
 
-const clearAllHistory = () => {
-  chatStore.conversations.forEach(conv => chatStore.deleteConversation(conv.id))
+/** 清空历史 = 逐条 DELETE；失败的重试不掩盖成功项，最后给出汇总提示 */
+const clearAllHistory = async () => {
+  const targets = [...chatStore.conversations]
   showClearConfirm.value = false
+  let failed = 0
+  for (const conv of targets) {
+    try {
+      await chatStore.deleteConversation(conv.id)
+    } catch {
+      failed += 1
+    }
+  }
+  if (failed) chatStore.error = `有 ${failed} 个对话删除失败，请稍后重试（其余已删除）`
 }
 </script>
