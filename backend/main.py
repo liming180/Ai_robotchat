@@ -615,29 +615,48 @@ async def get_metrics():
 
 @app.post("/api/v1/ai/generate-avatar", tags=["AI"])
 async def generate_avatar(request: AvatarRequest):
+    """生成 AI 头像。
+
+    降级路径必须可观测：返回的 message 明确区分「AI 成功」与「本地 SVG 降级」，
+    并在 data.fallback 里给出布尔值与原因，供前端提示用户——
+    历史上静默降级曾让"图像模型没生效"被误判为前端问题。
+    """
     try:
+        fallback_reason = ""
+
         # 仅当配置了远程图像模型（ZHIPU_IMAGE_MODEL 非空）才调用；置空直接走本地 SVG 降级
-        if llm_client and ZHIPU_IMAGE_MODEL:
+        if not ZHIPU_IMAGE_MODEL:
+            fallback_reason = "未配置 ZHIPU_IMAGE_MODEL"
+            print(f"[avatar] {fallback_reason}，使用本地 SVG 头像")
+        elif not llm_client:
+            fallback_reason = "LLM 客户端未初始化（ZHIPU_API_KEY 为空？）"
+            print(f"[avatar] {fallback_reason}，使用本地 SVG 头像")
+        else:
             try:
                 prompt = f"可爱的动漫风格头像，{request.personality}，{request.description}，高清，高质量"
+                # 智谱图像生成走 /images/generations（OpenAI 兼容），
+                # openai SDK 3.x 的方法名是 images.generate
                 response = llm_client.images.generate(
                     model=ZHIPU_IMAGE_MODEL,
                     prompt=prompt,
                     size="1024x1024"
                 )
                 avatar_url = response.data[0].url
-                print(f"Generated avatar using remote image model: {ZHIPU_IMAGE_MODEL}")
+                print(f"[avatar] Generated using remote image model: {ZHIPU_IMAGE_MODEL}")
 
                 return APIResponse(
                     success=True,
                     message="Avatar generated successfully using AI",
                     data={
-                        "avatarUrl": avatar_url
+                        "avatarUrl": avatar_url,
+                        "fallback": False,
+                        "model": ZHIPU_IMAGE_MODEL,
                     },
                     timestamp=datetime.utcnow().isoformat()
                 )
             except Exception as e:
-                print(f"Remote image generation error: {e}, falling back to local avatar")
+                fallback_reason = f"{type(e).__name__}: {e}"
+                print(f"[avatar] Remote image generation failed ({fallback_reason})，使用本地 SVG 头像")
 
         seed = f"{request.personality}-{request.description}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         label = (request.personality or "AI").strip()[:2]
@@ -645,9 +664,11 @@ async def generate_avatar(request: AvatarRequest):
 
         return APIResponse(
             success=True,
-            message="Avatar generated successfully",
+            message=f"Avatar fallback (SVG), 原因: {fallback_reason}",
             data={
-                "avatarUrl": avatar_url
+                "avatarUrl": avatar_url,
+                "fallback": True,
+                "fallbackReason": fallback_reason,
             },
             timestamp=datetime.utcnow().isoformat()
         )

@@ -85,6 +85,7 @@
               <p class="text-xs text-gray-500 mt-2">
                 将根据性格与描述生成头像；生成失败会自动使用本地矢量头像。
               </p>
+              <p v-if="avatarNotice" class="avatar-notice" role="alert">{{ avatarNotice }}</p>
             </div>
           </div>
 
@@ -254,12 +255,23 @@ const handleAvatarUpload = async (e: Event) => {
   }
 }
 
+/** 头像生成结果提示：后端降级或请求失败时显示，避免静默落 SVG 让用户以为是 AI 出的图 */
+const avatarNotice = ref('')
+
+interface AvatarResponse {
+  avatarUrl?: string
+  fallback?: boolean
+  fallbackReason?: string
+  model?: string
+}
+
 // AI 生成头像
 const generateAIAvatar = async () => {
   isGeneratingAvatar.value = true
+  avatarNotice.value = ''
 
   try {
-    const data = await aiFetch<{ avatarUrl?: string }>('/api/v1/ai/generate-avatar', {
+    const data = await aiFetch<AvatarResponse>('/api/v1/ai/generate-avatar', {
       method: 'POST',
       body: {
         personality: form.value.personality || '温柔体贴',
@@ -272,8 +284,16 @@ const generateAIAvatar = async () => {
     } else {
       generateFallbackAvatar()
     }
+
+    // 后端明确告知降级（未配模型 / 调用失败）时才提示，两者都算"没走成 AI"
+    if (data?.fallback) {
+      const reason = data.fallbackReason || '未知原因'
+      console.warn('[avatar] AI 生成失败，已使用本地头像。原因:', reason)
+      avatarNotice.value = `AI 生成失败，已使用本地头像（${reason}）`
+    }
   } catch (error) {
-    console.error('生成头像失败:', error)
+    console.warn('[avatar] AI 生成请求失败，已使用本地头像:', error)
+    avatarNotice.value = `AI 生成失败，已使用本地头像（${(error as Error).message}）`
     generateFallbackAvatar()
   } finally {
     isGeneratingAvatar.value = false
@@ -682,6 +702,18 @@ const createCompanion = async () => {
   color: #fca5a5;
   background: rgba(248, 113, 113, 0.08);
   font-size: 13px;
+}
+
+/* 头像 AI 生成失败提示（降级到本地 SVG 时显示，避免静默） */
+.avatar-notice {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 6px;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .submit-button {
