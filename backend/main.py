@@ -13,7 +13,7 @@ import base64
 from datetime import datetime
 from typing import List, Optional, Dict, Any, AsyncGenerator
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -108,6 +108,24 @@ def _route_llm(images: Optional[List[str]]):
     return llm_client, ZHIPU_MODEL, None
 
 
+# ── 流式端点共享密钥（仅防误调，不是安全加固：前端 token 会进浏览器产物）──
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "")
+print("[BOOT] SERVICE_TOKEN loaded:", bool(SERVICE_TOKEN))
+if not SERVICE_TOKEN:
+    print("[WARN] SERVICE_TOKEN 未配置，流式端点无鉴权保护（仅适合本地开发）")
+
+
+def verify_service_token(x_service_token: Optional[str] = Header(None)):
+    """校验 X-Service-Token 头（依赖注入，先于 body 校验执行）。
+
+    SERVICE_TOKEN 未配置时跳过校验。
+    """
+    if not SERVICE_TOKEN:
+        return
+    if x_service_token != SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Service-Token")
+
+
 # 初始化 LangChain 客户端
 langchain_client = None
 try:
@@ -189,6 +207,7 @@ class ChatRequest(BaseModel):
     userMessage: str
     images: Optional[List[str]] = None  # base64 data URLs for current turn
     userId: Optional[str] = None  # 用户ID，用于记忆查询
+    companionId: Optional[str] = None  # 伴侣ID，用于 RAG 知识库路由
 
 
 class SuggestionsRequest(BaseModel):
@@ -510,7 +529,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/v1/ai/chat/stream", tags=["AI"])
+@app.post("/api/v1/ai/chat/stream", tags=["AI"], dependencies=[Depends(verify_service_token)])
 async def chat_stream(request: ChatRequest):
     """SSE streaming endpoint – sends tokens as they arrive from the model."""
     return StreamingResponse(
@@ -746,10 +765,10 @@ async def chat_langchain(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/v1/ai/chat/langchain/stream", tags=["AI", "LangChain"])
+@app.post("/api/v1/ai/chat/langchain/stream", tags=["AI", "LangChain"], dependencies=[Depends(verify_service_token)])
 async def chat_langchain_stream(request: ChatRequest):
     """LangChain 流式接口 - 支持 Function Calling 的流式聊天"""
-    
+
     async def generate():
         try:
             personality = _extract_personality(request.systemPrompt)
@@ -784,16 +803,17 @@ async def chat_langchain_stream(request: ChatRequest):
                         user_input=request.userMessage,
                         chat_history=history,
                         personality=personality,
-                        user_id=request.userId
+                        user_id=request.userId,
+                        companion_id=request.companionId,
                     ):
                         data = json.dumps({"delta": chunk, "done": False}, ensure_ascii=False)
                         yield f"data: {data}\n\n"
-                    
+
                     yield f"data: {json.dumps({'delta': '', 'done': True})}\n\n"
                     return
                 except Exception as e:
                     print(f"LangChain stream error: {e}, falling back")
-            
+
             # 降级到原始流式方法
             async for sse_chunk in stream_smart_response(
                 request.userMessage,

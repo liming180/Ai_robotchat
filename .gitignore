@@ -91,8 +91,9 @@ backend-java/uploads/
 
 # 环境变量模板例外（不含密钥，需入库供新环境复制）
 !RAG-Knowledge-System/backend/.env.example
-# 前端开发环境地址（仅 localhost，无密钥，需入库保证新环境可构建）
-!frontend/.env.development
+# 前端开发环境地址 + token 模板（无密钥，需入库供新环境复制）
+!frontend/.env.example
+# 注意：frontend/.env.development 含 SERVICE_TOKEN，不入库
 
 # 例外：lib/ 是 Python 模板规则，误伤前端源码目录（avatar.ts/utils.ts/api.ts）
 !frontend/src/lib/

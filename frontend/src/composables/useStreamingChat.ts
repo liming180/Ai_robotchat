@@ -13,7 +13,9 @@ export function useStreamingChat() {
     images?: string[],
     enableRAG: boolean = true,
     /** Java 登录用户的 UUID，Python 记忆/情绪按它路由（P0-3） */
-    userId?: string | null
+    userId?: string | null,
+    /** 伴侣 ID，RAG 知识库按它路由到对应知识库 */
+    companionId?: string | null,
   ): Promise<string> {
     isStreaming.value = true
     streamingContent.value = ''
@@ -21,9 +23,12 @@ export function useStreamingChat() {
     try {
       // 根据是否启用RAG选择不同的API端点
       const endpoint = enableRAG ? '/api/v1/ai/chat/langchain/stream' : '/api/v1/ai/chat/stream'
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const serviceToken = import.meta.env.VITE_SERVICE_TOKEN
+      if (serviceToken) headers['X-Service-Token'] = serviceToken
       const res = await fetch(`${getAiBase()}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           userMessage,
           systemPrompt,
@@ -31,6 +36,7 @@ export function useStreamingChat() {
           images: images?.length ? images : undefined,
           // 未登录时传 undefined，由 Python 端使用匿名标识；守卫已保证正常路径下必有值
           userId: userId ?? undefined,
+          companionId: companionId ?? undefined,
         }),
       })
 

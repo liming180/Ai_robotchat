@@ -11,6 +11,7 @@ LangChain 客户端 —— 智谱 GLM（glm-4.5-air）Function Calling + RAG。
 说明：本链路保留模型思考（thinking），换取工具选择与多步推理质量；
 低延迟的普通对话走 main.py 直连链路（thinking 关闭）。
 """
+import logging
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -28,6 +29,41 @@ except Exception:
     _WEB_SEARCH_AVAILABLE = False
 
 from app.ai.prompts import build_system_prompt
+
+logger = logging.getLogger(__name__)
+
+
+def _search_knowledge_remote(companion_id: str, query: str, config) -> Optional[str]:
+    """调 8002 RAG 服务检索知识库。
+
+    Returns:
+        - 有 chunks：拼接后的检索文本（不回落）
+        - 空 chunks：提示语（正常业务结果，不回落）
+        - 4xx：None，调用方收到 None 后走本地兜底
+    Raises:
+        超时 / 连接异常 / HTTP 5xx 时抛异常，由调用方回落本地。
+    """
+    import requests
+
+    resp = requests.post(
+        config.RAG_SERVICE_URL + "/api/v1/kb/retrieve",
+        json={"companionId": companion_id, "query": query, "topK": 4},
+        timeout=config.RAG_TIMEOUT,
+    )
+    # 5xx 视为故障，抛异常触发回落
+    if resp.status_code >= 500:
+        raise RuntimeError("RAG 8002 返回 " + str(resp.status_code))
+    # 4xx 多为请求参数问题（如 companionId 未绑定知识库），记一条 warning 后返回 None；
+    # 调用方收到 None 会走本地兜底（行为与 5xx 一致，但不再抛出异常打断 Agent 链路）
+    if resp.status_code >= 400:
+        logger.warning("[search_knowledge] 8002 返回 %d: %s", resp.status_code, resp.text[:200])
+        return None
+
+    data = resp.json().get("data", {})
+    chunks = data.get("chunks", [])
+    if not chunks:
+        return "知识库中没有找到相关内容。"
+    return "\n".join(c["content"].strip() for c in chunks if c.get("content", "").strip())
 
 
 class NaturalLanguageOutputParser:
@@ -95,18 +131,25 @@ class LangChainGLMClient:
         self.config = LLMConfig()
 
         self.llm = create_llm()
+        # 无 companionId 的默认工具集 + agent（单例，供无 companionId 场景复用）
         self.tools = self._init_tools()
-
-        # 构建 Agent：tools 交给 LLM 自主选择调用
-        self.agent = create_agent(
-            model=self.llm,
-            tools=self.tools,
-            system_prompt=build_system_prompt(),
-        )
+        self.agent = self._build_agent(self.tools)
         print("[LangChain] Agent ready, tools: " + str([t.name for t in self.tools]))
 
-    def _init_tools(self) -> List[Any]:
-        """初始化全部工具（Function Calling）"""
+    def _build_agent(self, tools: List[Any]):
+        """用指定工具集构建 Agent（每次调用都是纯内存操作，开销 <1ms）"""
+        return create_agent(
+            model=self.llm,
+            tools=tools,
+            system_prompt=build_system_prompt(),
+        )
+
+    def _init_tools(self, companion_id: Optional[str] = None) -> List[Any]:
+        """初始化全部工具（Function Calling）。
+
+        Args:
+            companion_id: 伴侣 ID，传入时 search_knowledge 闭包会优先调 8002 RAG 服务。
+        """
         tools: List[Any] = []
 
         if _WEB_SEARCH_AVAILABLE:
@@ -253,10 +296,15 @@ class LangChainGLMClient:
 
         @tool
         def search_knowledge(query: str) -> str:
-            """检索知识库（RAG 检索增强）。
+            """检索伴侣（AI 角色）专属知识库（RAG 检索增强）。
 
-            回答涉及用户知识库中的资料、笔记、文档内容时使用；
-            与用户个人记忆无关的通用问题不要用这个工具。
+            使用场景（必须优先使用本工具）：
+            - 用户询问当前伴侣角色的喜好、设定、背景资料（如"小智喜欢吃什么""你的生日""你的设定"）
+            - 用户询问伴侣知识库中的资料、笔记、文档内容
+
+            不要使用本工具的场景：
+            - 查用户本人的记忆、聊天历史、个人偏好 → 用 search_user_memory
+            - 与用户个人记忆无关的通用问题
 
             Args:
                 query: 检索查询语句
@@ -264,6 +312,16 @@ class LangChainGLMClient:
             Returns:
                 检索到的知识片段
             """
+            # 有 companionId 时优先调 8002 RAG 服务（远程知识库）
+            if companion_id:
+                try:
+                    result = _search_knowledge_remote(companion_id, query, self.config)
+                    if result is not None:
+                        return result
+                except Exception as e:
+                    logger.warning("[search_knowledge] 8002 RAG 服务异常，回落本地: %s", e)
+
+            # 本地 RAG 兜底
             try:
                 from app.ai.rag import get_rag_store
                 store = get_rag_store()
@@ -274,7 +332,7 @@ class LangChainGLMClient:
                     return "知识库中没有找到相关内容。"
                 return "\n".join(d.page_content.strip() for d in docs if d.page_content.strip())
             except Exception as e:
-                print("[search_knowledge] failed: " + str(e))
+                print("[search_knowledge] local fallback failed: " + str(e))
                 return "知识库检索失败。"
 
         tools.append(search_knowledge)
@@ -356,15 +414,25 @@ class LangChainGLMClient:
         chat_history: Optional[List[Dict]] = None,
         personality: str = "温柔体贴",
         user_id: Optional[str] = None,
+        companion_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """流式对话（含 Function Calling）。
 
         Agent 执行完整链路后一次性拿到结果，再按块切分模拟流式输出，
         对前端表现为逐段吐字。
+
+        有 companion_id 时构建带闭包的工具集 + agent（search_knowledge 优先调 8002），
+        无 companion_id 时复用单例 agent。
         """
         try:
+            # 有 companion_id 时按请求构建 agent（闭包绑定，并发安全）
+            agent = self.agent
+            if companion_id:
+                tools = self._init_tools(companion_id=companion_id)
+                agent = self._build_agent(tools)
+
             messages = self._build_messages(user_input, chat_history, user_id)
-            result = await self.agent.ainvoke({"messages": messages})
+            result = await agent.ainvoke({"messages": messages})
             content = self._extract_content(result)
             parsed = NaturalLanguageOutputParser.parse(content)
 

@@ -570,7 +570,8 @@ const sendMessage = async () => {
       () => scrollToBottom(),
       images,
       enableRAG.value,
-      userStore.userId
+      userStore.userId,
+      companionId.value,
     )
 
     chatStore.addMessage(conversationId, 'assistant', assistantReply)

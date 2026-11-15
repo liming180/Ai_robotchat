@@ -32,6 +32,10 @@ class LLMConfig:
     MAX_TOKENS: int = 1024
     TOP_P: float = 0.9
 
+    # ── RAG 知识库服务（8002） ──
+    RAG_SERVICE_URL: str = "http://localhost:8002"
+    RAG_TIMEOUT: int = 3  # 秒
+
     def __post_init__(self):
         """兜底：未显式传值时，从环境变量补齐关键配置。
 
@@ -67,6 +71,10 @@ class LLMConfig:
             self.MAX_TOKENS = int(_os.getenv("LLM_MAX_TOKENS"))
         if _os.getenv("LLM_TOP_P"):
             self.TOP_P = float(_os.getenv("LLM_TOP_P"))
+        if _os.getenv("RAG_SERVICE_URL"):
+            self.RAG_SERVICE_URL = _os.getenv("RAG_SERVICE_URL").strip()
+        if _os.getenv("RAG_TIMEOUT"):
+            self.RAG_TIMEOUT = int(_os.getenv("RAG_TIMEOUT"))
 
     @classmethod
     def from_env(cls):
