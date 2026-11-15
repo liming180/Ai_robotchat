@@ -5,8 +5,8 @@
 | 项目名称 | AI 伴侣应用 API |
 |---------|-----------------|
 | API 版本 | v1 |
-| 最后更新 | 2026-10-23 |
-| Java 业务后端 | `http://localhost:8080/api/v1` |
+| 最后更新 | 2026-11-15 |
+| Java 业务后端 | `http://localhost:8081/api/v1` |
 | Python AI 服务 | `http://localhost:5000` |
 | RAG 知识库服务 | `http://localhost:8002/api/v1/kb` |
 
@@ -17,7 +17,7 @@
 
 ## 📦 统一响应格式（两套，注意区分）
 
-### Java 业务后端（8080）
+### Java 业务后端（8081）
 
 ```json
 {
@@ -61,11 +61,17 @@ Authorization: Bearer {accessToken}
 
 Token 有效期：accessToken 2 小时、refreshToken 7 天。过期后用 `POST /api/v1/auth/refresh` 换新。
 
-Python AI 服务当前**无鉴权**（收敛计划：加 `X-Service-Token` 共享密钥，见 [04-收敛点清单](./04-重构接后端收敛点清单.md) P1-5）。
+Python AI 服务的两个流式端点（`/chat/stream`、`/chat/langchain/stream`）需携带共享密钥头：
+
+```
+X-Service-Token: {SERVICE_TOKEN}
+```
+
+> 环境变量 `SERVICE_TOKEN` 未配置时跳过校验（保本地开发）；已配置时无头/错值返回 401。**注意**：前端 token 会进浏览器产物，此校验仅防误调，不是安全加固（P1-5 已完成）。
 
 ---
 
-## 🔓 认证模块 (Auth) — Java 8080
+## 🔓 认证模块 (Auth) — Java 8081
 
 ### 1. 发送邮箱验证码
 
@@ -74,9 +80,16 @@ Python AI 服务当前**无鉴权**（收敛计划：加 `X-Service-Token` 共�
 ```json
 // 请求
 { "email": "user@example.com" }
-// 响应 data
-{ "sent": true, "expiresIn": 300 }
+// 响应（2026-11-15 实测）
+{
+  "code": 200,
+  "message": "验证码发送成功",
+  "data": { "expiresIn": 300, "code": "123456", "sent": true },
+  "timestamp": "2026-11-15T12:47:23.3403312"
+}
 ```
+
+> `data.code` 仅在 `app.email.mock=true`（本地联调）时返回，方便直接注册；生产环境必须关闭 mock，此时该字段不出现。
 
 ### 2. 用户注册
 
@@ -123,7 +136,7 @@ Python AI 服务当前**无鉴权**（收敛计划：加 `X-Service-Token` 共�
 
 ---
 
-## 👤 用户模块 (Users) — Java 8080
+## 👤 用户模块 (Users) — Java 8081
 
 ### 1. 获取当前用户信息
 
@@ -146,7 +159,7 @@ Python AI 服务当前**无鉴权**（收敛计划：加 `X-Service-Token` 共�
 
 ---
 
-## 💖 伴侣模块 (Companions) — Java 8080
+## 💖 伴侣模块 (Companions) — Java 8081
 
 `CompanionResponse` 结构（列表与详情一致）：
 
@@ -228,7 +241,7 @@ Query 参数（均可选）：`category` 分类、`search` 关键词、`favorite
 
 ---
 
-## 💬 聊天模块 (Chat) — Java 8080
+## 💬 聊天模块 (Chat) — Java 8081
 
 ### 1. 获取对话列表
 
@@ -298,7 +311,7 @@ Query 参数：`companionId`（可选）、`page`（默认 1）、`pageSize`（�
 
 ---
 
-## 🤖 AI 模块 (Java) — 8080
+## 🤖 AI 模块 (Java) — 8081
 
 ### 生成伴侣头像
 
@@ -342,15 +355,20 @@ Query 参数：`companionId`（可选）、`page`（默认 1）、`pageSize`（�
 `GET /health`
 
 ```json
-// data
+// 完整响应（2026-11-15 实测）
 {
-  "status": "ok",
-  "timestamp": "2026-10-23T12:00:00",
-  "llm_available": true,
-  "vision_available": true,
-  "model": "glm-4.5-air",
-  "vision_model": "glm-4v-flash",
-  "image_model": null
+  "success": true,
+  "message": "Service is healthy",
+  "data": {
+    "status": "ok",
+    "timestamp": "2026-11-15T04:45:42.934761",
+    "llm_available": true,
+    "vision_available": true,
+    "model": "glm-4.5-air",
+    "vision_model": "glm-4v-flash",
+    "image_model": "cogview-4"
+  },
+  "timestamp": "2026-11-15T04:45:42.934761"
 }
 ```
 
@@ -375,7 +393,22 @@ Query 参数：`companionId`（可选）、`page`（默认 1）、`pageSize`（�
 
 `POST /api/v1/ai/chat/stream` — `Content-Type: application/json`，响应 `text/event-stream`。
 
-请求体同上。事件格式：
+**鉴权**：需 `X-Service-Token` 头（见「认证说明」）。
+
+请求体同 `/api/v1/ai/chat`，新增可选字段 `companionId`（伴侣 ID，用于 RAG 知识库路由）：
+
+```json
+{
+  "systemPrompt": "你是一个温柔体贴的AI伴侣…",
+  "messages": [ { "role": "user", "content": "你好", "images": null } ],
+  "userMessage": "今天天气怎么样？",
+  "images": ["data:image/png;base64,..."],
+  "userId": "user-uuid",
+  "companionId": "preset-2"
+}
+```
+
+事件格式：
 
 ```
 data: {"delta": "今", "done": false}
@@ -404,7 +437,13 @@ data: {"delta": "", "done": true}
 
 `POST /api/v1/ai/chat/langchain/stream` — 事件格式同第 3 节。
 
+**鉴权**：需 `X-Service-Token` 头（见「认证说明」）。
+
+请求体同第 3 节（含 `companionId`）。
+
 > ⚠️ **现状**：LangChain 链路的流式是**模拟流式**——Agent 一次性生成完毕后按块切分下发，首字延迟 ≈ 全量生成时间；普通 `/chat/stream` 为真流式。
+>
+> **RAG 收敛（P1-1 已完成）**：`search_knowledge` 工具优先调 8002 `/api/v1/kb/retrieve`（body `{companionId, query, topK:4}`），**只在超时/异常/HTTP 5xx 时回落本地 RAGStore**（8002 返回空 chunks 是正常业务结果，不回落）。companionId 通过闭包绑定：有 companionId 时每次请求构建新 agent，无则复用单例，并发安全。
 
 ### 6. 快捷回复建议
 
@@ -434,14 +473,14 @@ data: {"delta": "", "done": true}
 - `GET /api/v1/memory/{user_id}?keyword=xxx` → data `{ "memories": [{ "id", "userId", "type", "keyword", "content", "createdAt" }] }`
 - `POST /api/v1/memory` → 请求 `{ "userId", "memoryType": "fact", "keyword": "可选", "content" }`，data 为单条记忆
 
-> ⚠️ **现状**：查不到数据时返回示例假数据（收敛清单 P1-2 待清理）；数据库未配置返回 503。
+> 数据库未配置时返回 503。查不到数据返回空列表（任务四已清理示例假数据）。
 
 ### 9. 用户心情
 
 - `GET /api/v1/mood/{user_id}?days=7` → data `{ "moods": [{ "id", "userId", "mood", "score", "note", "createdAt" }] }`
 - `POST /api/v1/mood` → 请求 `{ "userId", "mood": "happy", "score": 8.5, "note": "可选" }`
 
-> 同上，无数据时返回示例假数据（待清理）。
+> 同上，查不到数据返回空列表（任务四已清理示例假数据）。
 
 ### 10. 性能指标
 
@@ -451,14 +490,56 @@ data: {"delta": "", "done": true}
 
 ## 🔎 RAG 知识库服务 — 8002
 
-前缀 `/api/v1/kb`，主要接口：
+前缀 `/api/v1/kb`，响应格式 `{success, message, data, error, timestamp}`。
+
+### 检索
+
+`POST /api/v1/kb/retrieve`
+
+```json
+// 请求
+{ "companionId": "preset-2", "query": "小智喜欢吃什么", "topK": 4 }
+// 响应 data
+{
+  "chunks": [ { "content": "…", "score": 0.85, "documentTitle": "…" } ],
+  "elapsedMs": 44,
+  "searchedCollections": ["kb-uuid"]
+}
+```
+
+> `companionId` 与 `collectionIds` 二选一；传 `companionId` 时自动路由到该伴侣绑定的所有 active 知识库。
+
+### 集合（知识库）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/kb/retrieve` | 检索，body 支持 `{query, collectionIds}` 或 `{query, companionId}` |
-| — | 集合/文档/任务接口 | 见 `RAG-Knowledge-System/backend/app/api/v1/`（collections/documents/tasks） |
+| POST | `/api/v1/kb/collections` | 创建知识库 |
+| GET | `/api/v1/kb/collections` | 列表（支持 `companionId` 过滤） |
+| GET | `/api/v1/kb/collections/{id}` | 详情 |
+| PUT | `/api/v1/kb/collections/{id}` | 更新 |
+| DELETE | `/api/v1/kb/collections/{id}` | 删除（级联清理文档/切片/向量） |
 
-> **现状**：前端与主后端均未调用 8002；Python 主服务 `search_knowledge` 用的是自带的 `backend/app/ai/rag.py` 本地向量库（另一套数据）。收敛计划任务七将主服务改为优先代理 8002。
+### 文档
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/kb/collections/{id}/documents/upload` | 上传文件（json/md/txt，异步向量化） |
+| POST | `/api/v1/kb/collections/{id}/documents/manual` | 手动录入一条知识 |
+| GET | `/api/v1/kb/collections/{id}/documents` | 文档列表 |
+| GET | `/api/v1/kb/documents/{id}` | 文档详情（`withChunks=true` 返回切片） |
+| PUT | `/api/v1/kb/documents/{id}` | 编辑（仅手动录入） |
+| POST | `/api/v1/kb/documents/{id}/reindex` | 重建索引 |
+| DELETE | `/api/v1/kb/documents/{id}` | 删除 |
+
+### 其他
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/kb/tasks/{taskId}` | 查询异步任务进度 |
+| GET | `/api/v1/kb/companions` | 伴侣列表（读主库） |
+| GET | `/health` | 健康检查 |
+
+> **主服务调用链（P1-1 已完成）**：Python 5000 的 `search_knowledge` 工具优先调 8002，超时/异常/5xx 回落本地 `backend/app/ai/rag.py` 向量库（兜底角色）。
 
 ---
 
@@ -473,4 +554,4 @@ data: {"delta": "", "done": true}
 
 ---
 
-*文档结束（依据 2026-10-23 代码勘察重写）*
+*文档结束（2026-11-15 按代码现状同步：Java 端口 8081、Python 流式端点鉴权、companionId 参数、RAG 8002 完整端点表）*

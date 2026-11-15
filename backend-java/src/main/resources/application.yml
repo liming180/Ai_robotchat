@@ -45,7 +45,7 @@ app:
   # 生产环境建议改为绝对路径或替换为对象存储。
   upload:
     dir: ./uploads
-    base-url: http://localhost:8080
+    base-url: http://localhost:8081
     max-size: 5242880  # 5MB
   email:
     # true 时验证码固定为 123456 且在接口响应中返回，仅用于本地联调。
@@ -53,4 +53,5 @@ app:
     mock: true
 
 server:
-  port: 8080
+  # 本机 8080 被无关项目 xiaoyi-rag-server 长期占用，本项目固定 8081
+  port: 8081

@@ -12,10 +12,10 @@ AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分�
 | --- | --- | --- | --- |
 | 前端 | `frontend/` | 3000 | Vue 3 + TypeScript + Vite 5 + Pinia + Tailwind CSS |
 | Python AI 服务 | `backend/` | 5000 | FastAPI + 智谱 GLM（glm-4.5-air 文本 / glm-4v-flash 视觉 / cogview-4 图像）+ LangChain 1.x |
-| Java 业务后端 | `backend-java/` | 8080 | Spring Boot 3 + MyBatis Plus + MySQL |
+| Java 业务后端 | `backend-java/` | **8081** | Spring Boot 3 + MyBatis Plus + MySQL |
 | RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + Chroma + 本地哈希向量 |
 
-注意：根目录 `README.md` 写的后端端口 8000 已过时，实际为 5000（前端硬编码、`main.py` 的 `APP_PORT` 默认值均为 5000）。
+> **端口口径已闭环（2026-11-15 任务八）**：本机 8080 被无关项目 `xiaoyi-rag-server` 长期占用，Java 固定 **8081**，已写入 `backend-java/src/main/resources/application.yml`（`server.port` 与 `app.upload.base-url`），不再依赖启动参数覆盖。
 
 ## 常用命令
 
@@ -32,31 +32,40 @@ npm run lint       # ESLint（lint:fix 自动修复）
 cd backend
 pip install -r requirements.txt
 python init_db.py  # 建表（支持 SQLite/PostgreSQL，逐表创建、失败跳过）
-python main.py     # 或 uvicorn main:app --reload --port 5000
+python -m uvicorn main:app --host 0.0.0.0 --port 5000
+# ⚠ 不要用 python main.py：APP_DEBUG=true 会开 reload，kill 父进程后
+#   multiprocessing 子进程仍占 5000，新进程绑定失败 exit code 3
 
 # Java 业务后端
 cd backend-java
 mvn clean install
-mvn spring-boot:run   # Swagger: http://localhost:8080/doc.html
+mvn spring-boot:run   # Swagger: http://localhost:8081/doc.html（端口已在 yml 固定）
 
 # RAG 知识库服务
 cd RAG-Knowledge-System/backend
 pip install -r requirements.txt
-python main.py        # API 文档: http://localhost:8002/docs
+python -m uvicorn main:app --host 0.0.0.0 --port 8002
+
+# 一键启停（推荐，独立进程 + 日志到 logs/）
+pwsh -File scripts/start-all.ps1
+pwsh -File scripts/stop-all.ps1    # 按 CommandLine 匹配，能杀掉 reload 孤儿子进程
 ```
 
-测试：Python 测试为 pytest 风格（`backend/tests/test_*.py`，pytest 未列入 requirements，需单独 `pip install pytest`）；单个测试用 `pytest tests/test_prompts.py::测试函数名`。Java 与 RAG 服务当前无测试代码。
+测试：Python 测试为 pytest 风格（`backend/tests/test_*.py`，pytest 未列入 requirements，需单独 `pip install pytest`）；单个测试用 `pytest tests/test_prompts.py::测试函数名`。`tests/manual_rag_tool_test.py` 是手动回归脚本（需 5000/8002 在线），pytest 不收集。Java 与 RAG 服务当前无自动化测试。
 
 ## 架构要点
 
-### 前端与后端的实际连接（重点）
+### 前端与后端的实际连接（重点，2026-11-15）
 
-前端目前只有两处真实调用后端，全部硬编码 `http://localhost:5000`，没有 Vite 代理、没有 `.env`：
+**前端已接 Java 8081，业务数据全部走后端**（任务三/四/五完成），统一 API 层在 `frontend/src/lib/api.ts`（`javaFetch` / `aiFetch` / `unwrapJava` / `unwrapPython`），地址走 `.env.development`，源码零硬编码。
 
-- `frontend/src/composables/useStreamingChat.ts` — AI 流式聊天与快捷建议
-- `frontend/src/pages/CreatePage.vue` — AI 头像生成
+三条出站链路：
 
-其余业务（登录注册、伴侣列表、聊天记录、记忆管理、情绪日历）都是 **Pinia store 内的 mock 数据 + localStorage**，未接后端。Java 业务后端（8080）已实现完整 REST API，但前端尚未接入；它通过 `application.yml` 中 `url: http://localhost:5000` 调用 Python AI 服务。
+- `lib/api.ts` → Java 8081：登录注册、伴侣、会话消息、图片上传、头像代理、记忆/情绪（任务四起记忆/情绪改调 Python）
+- `composables/useStreamingChat.ts` → Python 5000：SSE 流式聊天（唯一业务直连），请求头带 `X-Service-Token`，body 带 `companionId`
+- `lib/api.ts` `aiFetch` → Python 5000：`/api/v1/memory/*`、`/api/v1/mood/*`
+
+流式结束后 `chatStore.saveMessages()` 用 `generate=false` 把 user+assistant 两条落库到 Java（P0-5 方案 A）。Java 通过 `application.yml` 的 `ai.service.url: http://localhost:5000` 调用 Python。
 
 ### Python AI 服务（backend/）
 
@@ -64,7 +73,9 @@ python main.py        # API 文档: http://localhost:8002/docs
 - **三层降级链**：LangChain 客户端 → OpenAI SDK 直连 → 预设回复库 `PRESET_RESPONSES`。任一层失败自动落到下一层，服务永不因 API 故障挂掉。
 - **单平台三链路**（2026-11-13 定稿为智谱 GLM 单平台）：文本 `glm-4.5-air`、视觉 `glm-4v-flash`、图像生成 `cogview-4`，共用 `ZHIPU_API_KEY`，base URL 均为 `https://open.bigmodel.cn/api/paas/v4`，客户端为 `openai.OpenAI`。`ZHIPU_IMAGE_MODEL` 置空时头像走本地 SVG 降级。**`glm-4.5-air` 是思考模型，普通对话必须传 `extra_body={"thinking":{"type":"disabled"}}`，否则 `max_tokens` 较小时 `content` 为空**；LangChain 链路保留思考。带图请求绕过 LangChain Agent 直接走视觉链路（Agent 的 `HumanMessage` 无法承载 `image_url`）。
 - **Redis 可选**：启动时探测，不可用则降级为进程内内存缓存（会话缓存 + 响应缓存）。
-- `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——未接入远程 Embedding API；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 配置，字段名 `API_KEY`/`MODEL`/`VISION_*` 映射自 `ZHIPU_*` 环境变量）、`avatar_store.py`。
+- `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——未接入远程 Embedding API；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 配置，字段名 `API_KEY`/`MODEL`/`VISION_*` 映射自 `ZHIPU_*` 环境变量，另有 `RAG_SERVICE_URL`/`RAG_TIMEOUT`）、`avatar_store.py`。
+- **RAG 双路（P1-1 已完成）**：`search_knowledge` 优先调 8002 `/api/v1/kb/retrieve`（`{companionId, query, topK}`），**只在超时/异常/5xx 时回落本地 RAGStore**；8002 返回空 chunks 是正常业务结果，不回落。有 `companionId` 时每次请求构建新 agent（闭包绑定，并发安全），无则复用单例。
+- **工具选择规则（2026-11-15 修复）**：用户本人记忆/聊天历史 → `search_user_memory`；伴侣角色喜好/设定/背景 → `search_knowledge`。改提示词时双向都要测，避免把偏见从一侧翻到另一侧。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
 ### RAG 知识库服务（RAG-Knowledge-System/backend/）
@@ -74,10 +85,11 @@ python main.py        # API 文档: http://localhost:8002/docs
 
 ### 接口约定
 
-- 请求体 `ChatRequest`：`{ systemPrompt, messages[{role,content,images?}], userMessage, images?, userId? }`（images 为 base64 data URL）。
+- 请求体 `ChatRequest`：`{ systemPrompt, messages[{role,content,images?}], userMessage, images?, userId?, companionId? }`（images 为 base64 data URL；companionId 用于 RAG 知识库路由）。
 - 统一响应包装 `APIResponse`：`{ success, message, data, timestamp }`。
 - SSE 流式格式：每行 `data: {"delta": "文本", "done": false}\n\n`，结束帧 `{"delta": "", "done": true}`；前端按 `data: ` 前缀逐行解析。
 - 关键端点：`/api/v1/ai/chat/stream`（普通流式）、`/api/v1/ai/chat/langchain/stream`（RAG + Function Calling 增强流式）、`/api/v1/ai/suggestions`、`/api/v1/memory/{user_id}`、`/api/v1/mood/{user_id}`。
+- **流式端点鉴权（P1-5 已完成）**：两个 `/stream` 端点用 `Depends(verify_service_token)` 校验 `X-Service-Token` 头，不匹配返回 401；`SERVICE_TOKEN` 未配置时跳过。**必须用依赖注入**——写在函数体内会被 Pydantic body 校验抢先（无 token + 非法 body 会返回 400 而非 401）。**仅防误调，非安全加固**：前端 token 会进浏览器产物。
 
 ### 前端结构
 
@@ -86,7 +98,8 @@ python main.py        # API 文档: http://localhost:8002/docs
 
 ## 配置
 
-- `backend/.env`（已被 gitignore）：`ZHIPU_API_KEY`（文本/视觉/图像生成共用）、`ZHIPU_BASE_URL`、`ZHIPU_MODEL`（文本 `glm-4.5-air`）、`ZHIPU_VISION_MODEL`（视觉 `glm-4v-flash`）、`ZHIPU_IMAGE_MODEL`（图像 `cogview-4`，置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
+- `backend/.env`（已被 gitignore）：`ZHIPU_API_KEY`（文本/视觉/图像生成共用）、`ZHIPU_BASE_URL`、`ZHIPU_MODEL`（文本 `glm-4.5-air`）、`ZHIPU_VISION_MODEL`（视觉 `glm-4v-flash`）、`ZHIPU_IMAGE_MODEL`（图像 `cogview-4`，置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`、**`SERVICE_TOKEN`**（流式端点共享密钥，留空则不校验）。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
+- `frontend/.env.development`（已被 gitignore，**不入库**）：`VITE_API_BASE_URL`（8081）、`VITE_AI_BASE_URL`（5000）、`VITE_SERVICE_TOKEN`（与后端一致）。入库的是 `frontend/.env.example` 模板。**不要给 `.env.development` 加 `!` 反向例外**——加了 token 后就会泄漏进 git 历史。
 - `AI_INTEGRATION.md` — 双链路架构文档，密钥一律 `sk-***` 占位（历史版本曾含明文，git 历史中仍存留旧智谱密码，勿再引用）。
 - **Java 端密码注入**：`backend-java/application.yml` 的 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}` 环境变量占位，本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。
 - `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp` 等运行时/密钥文件；`RAG-Knowledge-System/backend/storage/uploads/` 上传数据同样不入库。

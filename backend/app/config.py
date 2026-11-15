@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "AI_Companion"
     app_env: str = "development"
-    app_port: int = 8000
+    app_port: int = 5000
     app_debug: bool = True
 
     # Database

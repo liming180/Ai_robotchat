@@ -19,45 +19,25 @@ AI 情侣互动产品是一个专注于情感陪伴的聊天应用，让用户�
 - **样式**: Tailwind CSS 3
 
 #### 后端技术栈
-- **Web 框架**: FastAPI
-- **ASGI 服务器**: Uvicorn
-- **ORM**: SQLAlchemy 2.0
-- **数据库迁移**: Alembic
-- **缓存**: Redis
-- **身份认证**: JWT
-- **AI 模型**: 智谱 GLM-4.5-Air
-- **异步 HTTP 客户端**: httpx
+- **Python AI 服务**：FastAPI + Uvicorn + SQLAlchemy 2.0 + LangChain 1.x + Redis（可选）+ 智谱 GLM（`glm-4.5-air` 文本 / `glm-4v-flash` 视觉 / `cogview-4` 图像）
+- **Java 业务服务**：Spring Boot 3 + MyBatis Plus + MySQL 8 + Redis + JWT 双 Token
+- **RAG 知识库**：FastAPI + Chroma + 本地哈希向量（256 维）
 
 ## 📁 项目结构
 
 ```
 Ai_robotchat/
 ├── docs/                        # 项目文档
-│   ├── 01-项目架构设计文档.md      # 架构设计
-│   ├── 02-后端开发任务清单.md      # 后端任务清单
-│   └── 03-API接口文档.md          # API 文档
-├── frontend/                    # 前端项目
-│   ├── src/
-│   │   ├── components/         # 公共组件
-│   │   ├── composables/        # 组合式函数
-│   │   ├── pages/             # 页面组件
-│   │   ├── router/            # 路由配置
-│   │   ├── stores/            # Pinia 状态管理
-│   │   ├── types/             # TypeScript 类型
-│   │   └── main.ts
-│   ├── package.json
-│   └── vite.config.ts
-├── backend/                     # 后端项目
-│   ├── app/
-│   │   ├── models/            # 数据库模型
-│   │   ├── schemas/           # Pydantic 验证模型
-│   │   ├── api/               # API 路由
-│   │   ├── services/          # 业务逻辑
-│   │   ├── websockets/        # WebSocket 处理
-│   │   └── utils/             # 工具函数
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── main.py
+├── frontend/                    # Vue 3 前端（:3000）
+├── backend/                     # Python AI 服务（:5000）
+│   ├── app/ai/                  # LangChain / RAG / prompts / config
+│   ├── app/services/            # 记忆/情绪 CRUD
+│   ├── main.py                  # 单文件大入口（全部路由）
+│   └── tests/                   # pytest
+├── backend-java/                # Java 业务后端（:8081）
+├── RAG-Knowledge-System/backend/# RAG 知识库服务（:8002）
+├── scripts/                     # start-all.ps1 / stop-all.ps1
+└── README.md
 ├── AI_design/                  # 设计资源
 └── README.md
 ```
@@ -90,34 +70,36 @@ npm run build
 ### 后端启动
 
 ```bash
-# 1. 进入后端目录
+# ── Python AI 服务（:5000）──
 cd backend
-
-# 2. 创建虚拟环境
-python -m venv venv
-
-# 3. 激活虚拟环境
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 4. 安装依赖
 pip install -r requirements.txt
+cp .env.example .env          # 填入 ZHIPU_API_KEY、SERVICE_TOKEN 等
+python -m uvicorn main:app --host 0.0.0.0 --port 5000
+# 注意：不要用 python main.py（APP_DEBUG=true 会开 reload，kill 后留孤儿进程占端口）
 
-# 5. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，填入数据库、Redis、GLM API 等配置
+# ── Java 业务后端（:8081）──
+cd backend-java
+mvn clean install
+mvn spring-boot:run           # 端口与上传地址已在 application.yml 固定为 8081
 
-# 6. 启动服务 (默认端口 8000)
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# ── RAG 知识库（:8002）──
+cd RAG-Knowledge-System/backend
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8002
 ```
+
+> 便捷方式：`pwsh -File scripts/start-all.ps1` 一并启动 3000 / 5000 / 8002（日志写入 `logs/`），`pwsh -File scripts/stop-all.ps1` 全部停止（含 reload 孤儿子进程）。
 
 ### 访问地址
 
-- **前端**: http://localhost:3000
-- **后端 API**: http://localhost:8000
-- **API 文档**: http://localhost:8000/docs
+| 服务 | 地址 |
+|------|------|
+| 前端 | http://localhost:3000 |
+| Java 业务 API | http://localhost:8081/api/v1 |
+| Java Swagger | http://localhost:8081/doc.html |
+| Python AI | http://localhost:5000 |
+| Python API 文档 | http://localhost:5000/docs |
+| RAG 知识库 | http://localhost:8002/docs |
 
 ## 📱 核心功能
 
@@ -131,33 +113,57 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - ✅ 聊天历史记录 - 历史对话
 - ✅ 个人中心 - 用户管理
 
-### 待开发的后端功能
-详见 [docs/02-后端开发任务清单.md](docs/02-后端开发任务清单.md)
+### 后端能力现状（2026-11-15）
+
+任务零~任务七已完成：前端全部业务接 Java 8081、流式聊天 SSE + 落库、头像生成（Java 代理 + 落盘）、RAG 知识库收敛到 8002、流式端点共享密钥。剩余待办见 [docs/02-后端开发任务清单.md](docs/02-后端开发任务清单.md)。
 
 ## 🔐 环境变量配置
 
-### 后端环境变量 (.env)
+### Python AI 服务（`backend/.env`，模板见 `.env.example`）
 
 ```env
-# 数据库
-DATABASE_URL=postgresql://user:password@localhost:5432/ai_companion
-
-# Redis
+ZHIPU_API_KEY=sk-***
+ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+ZHIPU_MODEL=glm-4.5-air
+ZHIPU_VISION_MODEL=glm-4v-flash
+ZHIPU_IMAGE_MODEL=cogview-4
+LLM_TEMPERATURE=0.7
+LLM_MAX_TOKENS=1024
+LLM_TOP_P=0.9
+DATABASE_URL=sqlite:///./ai_companion.db
 REDIS_URL=redis://localhost:6379/1
-
-# JWT
-JWT_SECRET_KEY=your-super-secret-key
-
-# GLM API
-GLM_API_KEY=your-glm-api-key-here
-GLM_MODEL=GLM-4.5-Air
+APP_HOST=0.0.0.0
+APP_PORT=5000
+APP_DEBUG=true
+SERVICE_TOKEN=            # 流式端点共享密钥；留空则不校验（仅本地开发）
 ```
+
+### 前端（`frontend/.env.development`，模板见 `.env.example`）
+
+```env
+VITE_API_BASE_URL=http://localhost:8081
+VITE_AI_BASE_URL=http://localhost:5000
+VITE_SERVICE_TOKEN=       # 与后端 SERVICE_TOKEN 一致
+```
+
+### Java 业务后端（`backend-java/src/main/resources/application.yml`）
+
+- MySQL / Redis 密码走用户级环境变量 `MYSQL_PASSWORD` / `REDIS_PASSWORD`（**必须新开终端启动 Java 才生效**）
+- `server.port: 8081`、`app.upload.base-url: http://localhost:8081` 已在 yml 固定
+
+### RAG 知识库（`RAG-Knowledge-System/backend/.env`，模板见 `.env.example`）
+
+- `DATABASE_URL` 指向 MySQL `rag_knowledge` 库；`MAIN_DATABASE_URL` 指向 `ai_companion`（伴侣下拉用）
+- 向量为本地哈希向量，**无需任何 API key**
+- `ALLOWED_EXTENSIONS=json,md,txt`
 
 ## 📚 文档
 
 - [架构设计文档](docs/01-项目架构设计文档.md) - 项目架构、目录结构、通信规范
 - [后端开发任务清单](docs/02-后端开发任务清单.md) - 后端开发任务、里程碑、验收标准
 - [API 接口文档](docs/03-API接口文档.md) - API 详细说明、请求示例、响应格式
+- [收敛点清单](docs/04-重构接后端收敛点清单.md) - P0/P1/P2 收敛进度与待办
+- [前后端打通落地计划](docs/superpowers/plans/2026-10-23-前后端打通与接后端落地.md) - 任务零~九实施记录
 
 ## 🤝 开发流程
 
