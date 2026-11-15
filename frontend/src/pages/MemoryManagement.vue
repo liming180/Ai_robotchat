@@ -68,18 +68,18 @@
               :key="memory.id"
               class="flex items-center gap-3 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all"
             >
-              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center">
+              <div class="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center">
                 <span class="text-lg">{{ memoryCategories.find(c => c.id === memory.type)?.icon }}</span>
               </div>
-              <div class="flex-1">
-                <div class="text-sm text-white">{{ memory.content }}</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-white break-words">{{ memory.content }}</div>
                 <div class="text-xs text-slate-400 mt-1">
                   {{ memoryCategories.find(c => c.id === memory.type)?.name }} · {{ formatDate(memory.createdAt) }}
                 </div>
               </div>
-              <!-- 编辑/删除需要 Python 端提供 update/delete 接口，本轮（任务四）只做新增，二期开放 -->
-              <div class="flex gap-2">
-                <span class="text-xs text-slate-600 self-center">只读</span>
+              <!-- 编辑/删除需要 Python 端提供 update/delete 接口（T-5，并入任务十） -->
+              <div class="flex gap-2 shrink-0">
+                <span class="text-xs text-slate-600 self-center whitespace-nowrap">只读</span>
               </div>
             </div>
           </div>
@@ -98,9 +98,10 @@
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">记忆类型</label>
+            <!-- option 需显式背景色：半透明 select 会让原生下拉选项白字透明底，展开像一片空白 -->
             <select
               v-model="newMemory.type"
-              class="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-violet-500/40"
+              class="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-violet-500/40 [&>option]:bg-slate-800 [&>option]:text-white"
             >
               <option v-for="category in memoryCategories" :key="category.id" :value="category.id">
                 {{ category.name }}
