@@ -4,7 +4,9 @@
 .DESCRIPTION
 仅匹配本工作区、指定端口的服务进程，先递归收集子进程再停止，
 避免 uvicorn reload 或 npm 留下子进程。不会终止 Java 服务或 MySQL。
-请使用 PowerShell 7（pwsh）执行：pwsh -File scripts/stop-all.ps1
+执行（Windows PowerShell 5.1 与 PowerShell 7 均可）：
+    powershell -NoProfile -File scripts/stop-all.ps1
+（PowerShell 7 用户也可用 pwsh -File scripts/stop-all.ps1）
 #>
 [CmdletBinding()]
 param(

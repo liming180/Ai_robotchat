@@ -88,7 +88,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8002
 ```
 
-> 便捷方式：`pwsh -File scripts/start-all.ps1` 一并启动 3000 / 5000 / 8002（日志写入 `logs/`），`pwsh -File scripts/stop-all.ps1` 全部停止（含 reload 孤儿子进程）。
+> 便捷方式：`powershell -NoProfile -File scripts/start-all.ps1` 一并启动 3000 / 5000 / 8002（日志写入 `logs/`），`powershell -NoProfile -File scripts/stop-all.ps1` 全部停止（含 reload 孤儿子进程）。
 
 ### 访问地址
 

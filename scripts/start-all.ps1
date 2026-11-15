@@ -4,7 +4,9 @@
 .DESCRIPTION
 服务脱离当前 PowerShell 会话运行，日志写入 logs/。
 再次运行会跳过已监听对应端口的服务，不会重复启动。
-请使用 PowerShell 7（pwsh）执行：pwsh -File scripts/start-all.ps1
+执行（Windows PowerShell 5.1 与 PowerShell 7 均可）：
+    powershell -NoProfile -File scripts/start-all.ps1
+（PowerShell 7 用户也可用 pwsh -File scripts/start-all.ps1）
 #>
 [CmdletBinding()]
 param(
@@ -103,4 +105,4 @@ if ($Service -in @('All', '3000')) {
         -WorkingDirectory (Join-Path $ProjectRoot 'frontend') -HealthUrl 'http://127.0.0.1:3000/'
 }
 
-Write-Status '完成。使用 pwsh -File scripts/stop-all.ps1 可停止这些服务。' 'Green'
+Write-Status '完成。使用 powershell -NoProfile -File scripts/stop-all.ps1 可停止这些服务。' 'Green'

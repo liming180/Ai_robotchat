@@ -47,8 +47,8 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8002
 
 # 一键启停（推荐，独立进程 + 日志到 logs/）
-pwsh -File scripts/start-all.ps1
-pwsh -File scripts/stop-all.ps1    # 按 CommandLine 匹配，能杀掉 reload 孤儿子进程
+powershell -NoProfile -File scripts/start-all.ps1
+powershell -NoProfile -File scripts/stop-all.ps1    # 按 CommandLine 匹配，能杀掉 reload 孤儿子进程
 ```
 
 测试：Python 测试为 pytest 风格（`backend/tests/test_*.py`，pytest 未列入 requirements，需单独 `pip install pytest`）；单个测试用 `pytest tests/test_prompts.py::测试函数名`。`tests/manual_rag_tool_test.py` 是手动回归脚本（需 5000/8002 在线），pytest 不收集。Java 与 RAG 服务当前无自动化测试。
