@@ -56,9 +56,11 @@ app:
     base-url: http://localhost:8081
     max-size: 5242880  # 5MB
   email:
-    # true 时验证码固定为 123456 且在接口响应中返回，仅用于本地联调。
-    # 默认 false（代码里的 @Value 兜底），部署环境必须关闭。
-    mock: true
+    # 验证码 mock 开关。**默认关闭**，只能通过环境变量 APP_EMAIL_MOCK 显式开启，
+    # 避免固定验证码 123456 成为已提交配置的默认行为（生产环境绝不能开）。
+    # 开启后验证码固定为 123456，且 /send-email-code 会在响应里回填 code，仅本地联调使用。
+    # 注意：关闭时为真实验证码分支，需要 Redis 可用（验证码存 Redis）。
+    mock: ${APP_EMAIL_MOCK:false}
 
 server:
   # 本机 8080 被无关项目 xiaoyi-rag-server 长期占用，本项目固定 8081

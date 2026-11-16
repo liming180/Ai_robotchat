@@ -40,7 +40,7 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * 验证码 mock 开关。默认 false（真实模式），只有 application.yml 显式配置
-     * app.email.mock: true 时才启用，避免部署环境忘记关闭导致验证码恒为 123456。
+     * 环境变量 APP_EMAIL_MOCK=true 时才启用，避免部署环境忘记关闭导致验证码恒为 123456。
      */
     @Value("${app.email.mock:false}")
     private boolean emailMock;
