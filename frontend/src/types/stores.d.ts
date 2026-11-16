@@ -10,8 +10,16 @@ declare module '@/stores/companion' {
 declare module '@/stores/note' {
   interface NoteStore extends Store<'note', any> {
     notes: any
-    addNote: (companionId: string, content: string, tags: string[]) => void
-    deleteNote: (noteId: string) => void
-    updateNote: (noteId: string, content: string, tags: string[]) => void
+    loading: boolean
+    error: string
+    allTags: string[]
+    /** 拉取列表；companionId 传空表示全部伴侣 */
+    loadNotes: (companionId?: string) => Promise<void>
+    addNote: (companionId: string, content: string, tags: string[]) => Promise<any>
+    deleteNote: (noteId: string) => Promise<void>
+    updateNote: (
+      noteId: string,
+      patch: { content?: string; tags?: string[]; companionId?: string },
+    ) => Promise<any>
   }
 }

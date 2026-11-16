@@ -63,6 +63,22 @@ CREATE TABLE IF NOT EXISTS message (
     deleted TINYINT(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 任务十一：用户笔记。归属 user_id + companion_id，删除伴侣时与会话/消息同事务逻辑删除。
+CREATE TABLE IF NOT EXISTS note (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    companion_id VARCHAR(36) NOT NULL,
+    content TEXT NOT NULL,
+    -- 逗号分隔，与 companion.tags 同一口径（P1-4：不展开为数组、不建标签表）
+    tags VARCHAR(500),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT(1) NOT NULL DEFAULT 0,
+    KEY idx_note_user_updated (user_id, updated_at),
+    -- 复合索引：级联删除执行 WHERE companion_id=? AND deleted=0，两条件全覆盖
+    KEY idx_note_companion_deleted (companion_id, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 用 INSERT IGNORE 保证脚本可重复执行（预置伴侣已存在时跳过，不报 1062）
 INSERT IGNORE INTO companion (id, name, avatar, description, category, personality, system_prompt, tags, created_by, is_preset) VALUES
 ('preset-1', '小暖', 'https://api.dicebear.com/9.x/adventurer/svg?seed=warm', '温柔体贴的聊天伙伴，总是能耐心倾听你的心声', '日常聊天', '温柔体贴', '你是一个温柔体贴的AI伴侣，名叫小暖。你性格温和，善于倾听，能够理解用户的情绪，并给予温暖的回应。你的语气亲切自然，像一个真正的朋友一样陪伴用户。', '温柔,倾听,陪伴', 'system', 1),
