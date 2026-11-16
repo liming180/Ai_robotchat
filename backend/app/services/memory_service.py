@@ -42,6 +42,52 @@ class MemoryService:
         self.db.refresh(memory)
         return memory
 
+    def get_memory_by_id(self, memory_id: int) -> Optional[UserMemory]:
+        """按 id 取单条记忆；不存在返回 None"""
+        return self.db.query(UserMemory).filter(UserMemory.id == memory_id).first()
+
+    def update_user_memory(
+        self,
+        memory_id: int,
+        user_id: str,
+        memory_type: Optional[str] = None,
+        keyword: Optional[str] = None,
+        content: Optional[str] = None,
+    ) -> Optional[UserMemory]:
+        """更新记忆。userId 用于归属校验：传错 userId 视为无权操作，返回 None。
+
+        只更新非 None 字段；content 变化时同步 keyword（keyword 是搜索键，
+        默认取 content 前 20 字符，与前端 addMemory 的口径一致）。
+        """
+        memory = self.get_memory_by_id(memory_id)
+        if memory is None or memory.user_id != user_id:
+            return None
+
+        content_changed = content is not None and content != memory.content
+        if content_changed:
+            memory.content = content
+            # 调用方显式给 keyword 时以调用方为准，否则随内容重建
+            memory.keyword = keyword if keyword is not None else (content[:20] if len(content) > 20 else content)
+        elif keyword is not None:
+            memory.keyword = keyword
+
+        if memory_type is not None:
+            memory.memory_type = memory_type
+
+        memory.updated_at = datetime.now()
+        self.db.commit()
+        self.db.refresh(memory)
+        return memory
+
+    def delete_user_memory(self, memory_id: int, user_id: str) -> bool:
+        """删除记忆。返回 True 表示确实删掉了一条；False 表示不存在或无权。"""
+        memory = self.get_memory_by_id(memory_id)
+        if memory is None or memory.user_id != user_id:
+            return False
+        self.db.delete(memory)
+        self.db.commit()
+        return True
+
 
 class MoodService:
     """心情服务"""

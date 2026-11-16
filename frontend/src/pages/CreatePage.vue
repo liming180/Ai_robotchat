@@ -20,14 +20,39 @@
     <main class="page-content">
       <section class="intro" aria-labelledby="create-title">
         <div>
-          <p class="eyebrow"><Sparkles :size="15" /> CREATE COMPANION</p>
-          <h1 id="create-title">创建专属 AI 伴侣</h1>
-          <p class="intro-copy">定制你的专属 AI 伴侣，打造独特的互动体验。</p>
+          <p class="eyebrow"><Sparkles :size="15" /> {{ isEditMode ? 'EDIT COMPANION' : 'CREATE COMPANION' }}</p>
+          <h1 id="create-title">{{ isEditMode ? '编辑 AI 伴侣' : '创建专属 AI 伴侣' }}</h1>
+          <p class="intro-copy">{{ isEditMode ? '调整伴侣的人设与形象，保存后立即生效。' : '定制你的专属 AI 伴侣，打造独特的互动体验。' }}</p>
         </div>
       </section>
 
-      <section class="create-form">
-        <form @submit.prevent="createCompanion" class="form-container">
+      <!-- 编辑被拒：加载完即渲染空态，不给用户填一个注定提交失败的表单 -->
+      <section v-if="editDeniedReason" class="create-form">
+        <div class="denied-state">
+          <div class="denied-icon">
+            <Heart :size="40" />
+          </div>
+          <h2 class="denied-title">{{ editDeniedReason }}</h2>
+          <p class="denied-copy">
+            {{ editDeniedReason.includes('预置')
+              ? '系统预置伴侣由平台统一维护，不开放编辑。'
+              : '只有自己创建的伴侣才能修改人设。' }}
+          </p>
+          <button type="button" class="denied-button" @click="router.push('/square')">
+            返回广场
+          </button>
+        </div>
+      </section>
+
+      <section v-else-if="editLoading" class="create-form">
+        <div class="denied-state">
+          <Loader2 :size="32" class="animate-spin" />
+          <p class="denied-copy mt-4">正在加载伴侣信息…</p>
+        </div>
+      </section>
+
+      <section v-else class="create-form">
+        <form @submit.prevent="submitCompanion" class="form-container">
           <!-- 头像设置 -->
           <div class="form-section">
             <div class="section-heading">
@@ -173,14 +198,24 @@
           <!-- 提交按钮 -->
           <div class="form-submit">
             <p v-if="submitError" class="submit-error" role="alert">{{ submitError }}</p>
-            <button
-              type="submit"
-              :disabled="isCreating"
-              class="submit-button"
-            >
-              <Loader2 v-if="isCreating" :size="20" class="animate-spin" />
-              <span>{{ isCreating ? '创建中...' : '创建 AI 伴侣' }}</span>
-            </button>
+            <div class="submit-row">
+              <button
+                v-if="isEditMode"
+                type="button"
+                class="cancel-button"
+                @click="router.back()"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                :disabled="isCreating"
+                class="submit-button"
+              >
+                <Loader2 v-if="isCreating" :size="20" class="animate-spin" />
+                <span>{{ isCreating ? (isEditMode ? '保存中...' : '创建中...') : (isEditMode ? '保存修改' : '创建 AI 伴侣') }}</span>
+              </button>
+            </div>
           </div>
         </form>
       </section>
@@ -189,8 +224,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Camera,
   Heart,
@@ -201,11 +236,18 @@ import {
   Loader2
 } from 'lucide-vue-next'
 import { useCompanionStore } from '@/stores/companion'
+import { useUserStore } from '@/stores/user'
 import { compressImageFileToDataUrl, createSvgAvatarDataUrl, toJpegDataUrl } from '@/lib/avatar'
 import { javaFetch, uploadImage } from '@/lib/api'
 
 const router = useRouter()
+const route = useRoute()
 const companionStore = useCompanionStore()
+const userStore = useUserStore()
+
+/** 编辑模式：/create?edit={id}。带 id 时回填表单，提交走 PUT。 */
+const editingId = computed(() => (route.query.edit as string) || '')
+const isEditMode = computed(() => Boolean(editingId.value))
 
 const isCreating = ref(false)
 const isGeneratingAvatar = ref(false)
@@ -309,7 +351,49 @@ const generateFallbackAvatar = () => {
 
 const submitError = ref('')
 
-const createCompanion = async () => {
+/**
+ * 编辑模式的拒绝原因：数据加载完就判定并渲染空态，不等用户填完表单才报错。
+ * 空字符串表示可编辑（或不是编辑模式）。
+ */
+const editDeniedReason = ref('')
+/** 编辑模式下详情尚未加载完，期间不渲染表单，避免出现「可填但提交必失败」的闪屏 */
+const editLoading = ref(false)
+
+/** 编辑模式回填：列表没加载时先补一次详情，再灌进表单 */
+onMounted(async () => {
+  if (!isEditMode.value) return
+  editLoading.value = true
+  try {
+    const existing =
+      companionStore.getCompanionById(editingId.value) ??
+      (await companionStore.loadCompanion(editingId.value))
+
+    if (!existing) {
+      editDeniedReason.value = '伴侣不存在或已被删除'
+      return
+    }
+    if (!companionStore.canManage(existing, userStore.userId)) {
+      editDeniedReason.value = existing.isPreset
+        ? '这是系统预置伴侣，不支持编辑'
+        : '这不是你创建的伴侣，无法编辑'
+      return
+    }
+
+    form.value = {
+      name: existing.name,
+      avatar: existing.avatar,
+      category: existing.category,
+      personality: existing.personality,
+      description: existing.description,
+      systemPrompt: existing.systemPrompt,
+    }
+    tagsInput.value = existing.tags.join(', ')
+  } finally {
+    editLoading.value = false
+  }
+})
+
+const submitCompanion = async () => {
   if (isCreating.value) return
   isCreating.value = true
   submitError.value = ''
@@ -340,7 +424,7 @@ const createCompanion = async () => {
     if (avatarUrl?.startsWith('data:image/svg')) avatarUrl = await toJpegDataUrl(avatarUrl)
     if (avatarUrl?.startsWith('data:')) avatarUrl = await uploadImage(avatarUrl)
 
-    await companionStore.createCompanion({
+    const payload = {
       name: form.value.name,
       avatar: avatarUrl,
       category: form.value.category,
@@ -348,11 +432,17 @@ const createCompanion = async () => {
       description: form.value.description,
       systemPrompt: form.value.systemPrompt,
       tags,
-    })
+    }
+
+    if (isEditMode.value) {
+      await companionStore.updateCompanion(editingId.value, payload)
+    } else {
+      await companionStore.createCompanion(payload)
+    }
 
     router.push('/square')
   } catch (e) {
-    submitError.value = `创建失败：${(e as Error).message}`
+    submitError.value = `${isEditMode.value ? '保存失败' : '创建失败'}：${(e as Error).message}`
   } finally {
     isCreating.value = false
   }
@@ -716,11 +806,90 @@ const createCompanion = async () => {
   line-height: 1.5;
 }
 
+/* 编辑模式下「取消 + 保存」并排；创建模式只有保存，按钮仍占满整行 */
+.submit-row {
+  display: flex;
+  gap: 14px;
+}
+
+.cancel-button {
+  flex: 0 0 140px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #d6d3cc;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.cancel-button:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+
+/* 编辑被拒 / 加载中：整块替换表单，给出明确退出路径 */
+.denied-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 72px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.denied-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  margin-bottom: 24px;
+  border-radius: 50%;
+  color: rgba(255, 155, 132, 0.75);
+  background: rgba(255, 139, 114, 0.1);
+}
+
+.denied-title {
+  margin: 0 0 12px;
+  color: #f6f4ef;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.denied-copy {
+  margin: 0 0 32px;
+  color: #9b9a95;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.denied-button {
+  padding: 14px 32px;
+  border: 0;
+  border-radius: 8px;
+  color: #201612;
+  background: linear-gradient(135deg, #ff8b72 0%, #ff9b84 100%);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+
+.denied-button:hover {
+  transform: translateY(-2px);
+}
+
 .submit-button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
+  flex: 1;
   width: 100%;
   padding: 16px;
   border: 0;

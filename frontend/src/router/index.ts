@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getAccessToken } from '@/lib/api'
 import ChatPage from '@/pages/ChatPage.vue'
 import SquarePage from '@/pages/SquarePage.vue'
@@ -7,12 +7,11 @@ import ProfilePage from '@/pages/ProfilePage.vue'
 import HomePage from '@/pages/HomePage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import HistoryPage from '@/pages/HistoryPage.vue'
-import SettingsPage from '@/pages/SettingsPage.vue'
 import MemoryManagement from '@/pages/MemoryManagement.vue'
 import EmotionCalendar from '@/pages/EmotionCalendar.vue'
 import NotesPage from '@/pages/NotesPage.vue'
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
@@ -49,9 +48,14 @@ const routes = [
     component: HistoryPage,
   },
   {
+    // 编辑能力已合并到 CreatePage（字段更全，含 tags 与 AI 头像生成）。
+    // 用路由级 redirect 而非页面内 push：push 会在历史栈里再压一条，
+    // 用户按回退键会回到 /settings 又立刻被 push 回去，形成回退死循环。
+    // redirect 是「替换式」跳转，回退键直接跳过来源页，不会被弹回。
+    // 此路由仅作为老书签 / 旧历史记录的兜底，业务入口一律直接写 /create?edit=。
     path: '/settings/:id',
     name: 'settings',
-    component: SettingsPage,
+    redirect: to => ({ path: '/create', query: { edit: String(to.params.id) } }),
   },
   {
     path: '/memory',

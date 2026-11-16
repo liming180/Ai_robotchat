@@ -180,12 +180,15 @@
           <h3 class="text-xl font-bold text-white mb-6">设置</h3>
           <div class="space-y-4">
             <button
-              @click="clearAllData" class="w-full p-4 border border-red-500/50 text-red-400 rounded-xl hover:bg-red-500/10 transition-colors flex items-center justify-center gap-3">
+              @click="clearLocalCache" class="w-full p-4 border border-amber-500/50 text-amber-400 rounded-xl hover:bg-amber-500/10 transition-colors flex items-center justify-center gap-3">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
-              清除所有数据
+              清除本地缓存
             </button>
+            <p class="text-xs text-slate-500 leading-relaxed">
+              仅清除本机浏览器里的副本缓存，<strong class="text-slate-400">不会删除账号里的任何数据</strong>（伴侣、对话、记忆、情绪都保留在服务器），也不会退出登录。清除后页面会重新从服务器拉取最新内容。
+            </p>
             <button
               @click="showSettings = false" class="w-full p-4 bg-white/5 border border-white/10 text-slate-300 rounded-xl hover:bg-white/10 transition-colors"
             >
@@ -216,6 +219,7 @@ import {
 import { useCompanionStore } from '@/stores/companion'
 import { useChatStore } from '@/stores/chat'
 import { createSvgAvatarDataUrl } from '@/lib/avatar'
+import { clearBusinessCache } from '@/lib/api'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
@@ -250,13 +254,22 @@ const handleCompanionAvatarError = (e: Event) => {
   img.src = createSvgAvatarDataUrl({ seed, label })
 }
 
-const clearAllData = () => {
-  if (confirm('确定要清除所有数据吗？这将删除所有对话和自定义伴侣。')) {
-    // 清除 localStorage
-    localStorage.clear()
-    // 刷新页面来重置所有状态
-    location.reload()
+/**
+ * 清除本地缓存（不是删除账号数据）。
+ *
+ * 只清业务缓存 key（会话/情绪/记忆/笔记等前端副本），**保留 token 与主题偏好**：
+ * 用户清完仍是登录状态，刷新后各页面会重新从服务器拉取。
+ *
+ * 历史版本这里叫「清除所有数据」，文案宣称会删除对话和伴侣，实际只执行
+ * `localStorage.clear()` + 刷新——后端一条没删却把人踢下线，属于误导性假功能。
+ */
+const clearLocalCache = () => {
+  if (!confirm('清除本地缓存？\n\n这只清除本机浏览器里的副本，不会删除账号里的任何数据，也不会退出登录。')) {
+    return
   }
+  clearBusinessCache()
+  alert('本地缓存已清除，页面将重新加载最新数据。')
+  location.reload()
 }
 </script>
 

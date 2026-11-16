@@ -28,4 +28,19 @@ public class RestTemplateConfig {
         factory.setReadTimeout(60_000);
         return new RestTemplate(factory);
     }
+
+    /**
+     * 8002 RAG 服务专用客户端。
+     *
+     * <p>删除伴侣时会按 companionId 列出知识库并逐个 DELETE。这里用短超时（连接 2s / 读 3s）
+     * 是刻意的：8002 不可用时我们要 fail-fast（让上层返回 502 并不动 MySQL），
+     * 而不是让整条删除链路挂在 HTTP 等待上。</p>
+     */
+    @Bean("ragRestTemplate")
+    public RestTemplate ragRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2_000);
+        factory.setReadTimeout(3_000);
+        return new RestTemplate(factory);
+    }
 }

@@ -70,6 +70,17 @@ public class CompanionController {
         return Result.success("更新成功", companion);
     }
 
+    @DeleteMapping("/{id}")
+    @Operation(summary = "删除自定义伴侣（级联清理对话、消息、收藏、知识库与向量）")
+    public Result<Void> deleteCompanion(
+            Authentication authentication,
+            @PathVariable String id
+    ) {
+        String userId = (String) authentication.getPrincipal();
+        companionService.deleteCompanion(userId, id);
+        return Result.success("删除成功", null);
+    }
+
     @PatchMapping("/{id}/favorite")
     @Operation(summary = "切换收藏状态")
     public Result<Map<String, Object>> toggleFavorite(

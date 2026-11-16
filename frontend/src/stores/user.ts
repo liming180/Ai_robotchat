@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { javaFetch, setTokens, clearTokens, accessToken, ApiError } from '@/lib/api'
+import { javaFetch, setTokens, clearTokens, accessToken, clearBusinessCache, ApiError } from '@/lib/api'
 
 /** 与 Java `AuthResponse.UserInfo` 一一对应 */
 export interface User {
@@ -118,6 +118,9 @@ export const useUserStore = defineStore('user', () => {
     user.value = null
     localStorage.removeItem(USER_CACHE_KEY)
     clearTokens()
+    // 业务缓存必须一起清：否则换账号登录后，后端请求失败走离线兜底时
+    // 会把上一个账号的会话/情绪/记忆展示给新用户
+    clearBusinessCache()
   }
 
   return {

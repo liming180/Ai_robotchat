@@ -30,4 +30,11 @@ public class GlobalExceptionHandler {
     public Result<?> handleIllegalArgumentException(IllegalArgumentException e) {
         return Result.error(400, e.getMessage());
     }
+
+    /** 下游服务（如 8002 RAG）不可用：502，与自身 500 区分开，前端提示语更准确。 */
+    @ExceptionHandler(ServiceUnavailableException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public Result<?> handleServiceUnavailableException(ServiceUnavailableException e) {
+        return Result.error(502, e.getMessage());
+    }
 }

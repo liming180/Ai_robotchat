@@ -51,7 +51,8 @@
           />
           <div class="flex items-center gap-2 text-sm text-slate-400">
             <span>强度</span>
-            <input v-model.number="draftIntensity" type="range" min="10" max="100" step="10" class="w-28 accent-pink-500" />
+            <!-- step=1：原先 step=10 只能选整十，用户想要的 67% 根本调不出来 -->
+            <input v-model.number="draftIntensity" type="range" min="1" max="100" step="1" class="w-28 accent-pink-500" />
             <span class="w-9 text-right text-slate-300">{{ draftIntensity }}%</span>
           </div>
           <button

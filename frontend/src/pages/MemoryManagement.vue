@@ -77,9 +77,29 @@
                   {{ memoryCategories.find(c => c.id === memory.type)?.name }} · {{ formatDate(memory.createdAt) }}
                 </div>
               </div>
-              <!-- 编辑/删除需要 Python 端提供 update/delete 接口（T-5，并入任务十） -->
-              <div class="flex gap-2 shrink-0">
-                <span class="text-xs text-slate-600 self-center whitespace-nowrap">只读</span>
+              <div v-if="canEdit" class="flex gap-1 shrink-0">
+                <button
+                  type="button"
+                  title="编辑"
+                  aria-label="编辑记忆"
+                  class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  @click="openEditForm(memory)"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  title="删除"
+                  aria-label="删除记忆"
+                  class="p-2 rounded-lg text-slate-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                  @click="openDeleteDialog(memory)"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -94,7 +114,7 @@
 
       <!-- 新增/编辑表单 -->
       <div v-if="showForm" class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">新增记忆</h3>
+        <h3 class="text-lg font-semibold text-white mb-4">{{ editingId ? '编辑记忆' : '新增记忆' }}</h3>
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">记忆类型</label>
@@ -127,12 +147,42 @@
               {{ saving ? '保存中...' : '保存' }}
             </button>
             <button
-              @click="showForm = false"
+              @click="cancelForm"
               class="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-300 hover:bg-white/10 transition-all"
             >
               取消
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除记忆二次确认：普通确认即可（单条数据，可重新录入） -->
+    <div
+      v-if="deleteTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+      @click.self="closeDeleteDialog"
+    >
+      <div class="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6" role="dialog" aria-modal="true">
+        <h3 class="text-lg font-semibold text-white mb-3">删除这条记忆？</h3>
+        <p class="text-sm text-slate-300 break-words mb-4">{{ deleteTarget.content }}</p>
+        <p class="text-xs text-slate-500 mb-4">删除后该记忆将从数据库与向量库中移除，不可恢复。</p>
+        <p v-if="deleteError" class="text-sm text-red-300 mb-4" role="alert">{{ deleteError }}</p>
+        <div class="flex gap-3">
+          <button
+            @click="closeDeleteDialog"
+            :disabled="deleting"
+            class="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-300 hover:bg-white/10 transition-all disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button
+            @click="confirmDelete"
+            :disabled="deleting"
+            class="flex-1 px-4 py-2 bg-red-500/90 rounded-xl text-white font-medium hover:bg-red-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {{ deleting ? '删除中...' : '确认删除' }}
+          </button>
         </div>
       </div>
     </div>
@@ -151,11 +201,21 @@ const {
   saving,
   saveError,
   newMemory,
+  editingId,
+  deleteTarget,
+  deleting,
+  deleteError,
+  canEdit,
   filteredMemories,
   getMemoryCount,
   load,
   openAddForm,
+  openEditForm,
+  cancelForm,
   saveMemory,
+  openDeleteDialog,
+  closeDeleteDialog,
+  confirmDelete,
   error,
 } = useMemorySystem()
 

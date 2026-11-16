@@ -74,7 +74,8 @@
               <label class="block text-sm font-medium text-slate-300 mb-2">分类</label>
               <select
                 v-model="form.category"
-                class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                class="w-full pl-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all appearance-none bg-no-repeat"
+                style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E&quot;); background-position: right 0.9rem center;"
               >
                 <option value="日常聊天">日常聊天</option>
                 <option value="学习助手">学习助手</option>
@@ -86,7 +87,8 @@
               <label class="block text-sm font-medium text-slate-300 mb-2">性格</label>
               <select
                 v-model="form.personality"
-                class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                class="w-full pl-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all appearance-none bg-no-repeat"
+                style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E&quot;); background-position: right 0.9rem center;"
               >
                 <option value="温柔体贴">温柔体贴</option>
                 <option value="博学多才">博学多才</option>
@@ -121,13 +123,14 @@
 
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2">系统提示词</label>
+            <!-- 系统提示词通常较长：给足默认高度 + 允许用户纵向拖大，避免内容卡在滚动临界点显得拥挤 -->
             <textarea
               v-model="form.systemPrompt"
-              rows="6"
-              class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all resize-none font-mono text-sm"
+              rows="10"
+              class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all resize-y font-mono text-sm leading-relaxed"
             ></textarea>
             <p class="text-xs text-slate-500 mt-2">
-              这决定了 AI 伴侣如何与你对话，包括语气、风格、角色设定等
+              这决定了 AI 伴侣如何与你对话，包括语气、风格、角色设定等（右下角可拖大编辑框）
             </p>
           </div>
         </div>
@@ -160,8 +163,8 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
         </div>
-        <h3 class="text-xl font-semibold text-white mb-2">伴侣未找到</h3>
-        <p class="text-slate-400 mb-6">请先选择一个 AI 伴侣</p>
+        <h3 class="text-xl font-semibold text-white mb-2">{{ deniedReason || '伴侣未找到' }}</h3>
+        <p class="text-slate-400 mb-6">{{ deniedReason ? '该伴侣无法在此修改' : '请先选择一个 AI 伴侣' }}</p>
         <button @click="$router.push('/')" class="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 rounded-xl font-semibold text-white hover:from-pink-400 hover:to-purple-500 transition-all">
           返回广场
         </button>
@@ -174,17 +177,32 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
+import { useUserStore } from '@/stores/user'
 import { compressImageFileToDataUrl, createSvgAvatarDataUrl, toJpegDataUrl } from '@/lib/avatar'
 import { uploadImage } from '@/lib/api'
 
 const route = useRoute()
 const router = useRouter()
 const companionStore = useCompanionStore()
+const userStore = useUserStore()
 
 const isSaving = ref(false)
 const saveError = ref('')
 
-const companion = computed(() => companionStore.getCompanionById(route.params.id as string))
+/** 原始伴侣（可能因预置/越权而不可编辑） */
+const rawCompanion = computed(() => companionStore.getCompanionById(route.params.id as string))
+/** 只有非预置且本人创建的伴侣才允许编辑；否则走空态（后端同样会拒绝） */
+const companion = computed(() => {
+  const c = rawCompanion.value
+  if (!c) return undefined
+  return companionStore.canManage(c, userStore.userId) ? c : undefined
+})
+/** 存在但无权编辑时给出针对性文案，与「伴侣不存在」区分 */
+const deniedReason = computed(() => {
+  if (!rawCompanion.value) return ''
+  if (rawCompanion.value.isPreset) return '这是系统预置伴侣，不支持编辑'
+  return '这不是你创建的伴侣，无法编辑'
+})
 
 const form = ref({
   name: '',

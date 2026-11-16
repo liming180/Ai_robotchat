@@ -21,6 +21,33 @@ export const TOKEN_KEYS = {
 /** user store 现有的用户信息缓存键，强制登出时一并清理，避免残留旧身份 */
 const USER_CACHE_KEY = 'ai_companion_user'
 
+/**
+ * 业务缓存键。这些 key 存的是「用户数据的前端副本」（会话、情绪、记忆、笔记等），
+ * 不属于登录态，但也绝不能跨账号残留——换账号后若后端请求失败走离线兜底，
+ * 会把上一个账号的数据展示给新用户。
+ *
+ * 与 TOKEN_KEYS / USER_CACHE_KEY 分开维护：清业务缓存时**不清 token**，
+ * 用户仍保持登录（个人页的「清除本地缓存」就依赖这一点）。
+ * theme 这类纯界面偏好不在列表内。
+ *
+ * 注意：`ai-notes` 已于 2026-11-16 移除——笔记改由 Java `/api/v1/notes` 存储，
+ * 本地不再有副本（旧本地数据不迁移、直接废弃，见任务十一方案）。
+ */
+export const BUSINESS_CACHE_KEYS = [
+  'ai_companion_chats',      // stores/chat.ts
+  'ai_companion_catalog',    // stores/companion.ts
+  'ai-emotion-records',      // stores/emotion.ts
+  'ai-memories',             // stores/memory.ts
+  'ai-saved-content',        // stores/content.ts
+  'ai-shared-todos',         // composables/useGameInteraction.ts
+  'ai-scene-settings',       // composables/useSceneService.ts
+] as const
+
+/** 清空业务缓存（保留 token 与 theme，不影响登录态） */
+export function clearBusinessCache(): void {
+  for (const key of BUSINESS_CACHE_KEYS) localStorage.removeItem(key)
+}
+
 export class ApiError extends Error {
   code: number
   status: number
@@ -179,6 +206,8 @@ async function forceLogout(): Promise<void> {
   clearTokens()
   // 清掉旧身份缓存，避免守卫读到"有用户但无 token"的中间态
   localStorage.removeItem(USER_CACHE_KEY)
+  // 业务缓存一并清掉：被动登出后若换账号登录，旧数据不能残留
+  clearBusinessCache()
 
   try {
     const { default: router } = await import('@/router')

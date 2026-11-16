@@ -859,6 +859,14 @@ class MoodCreateRequest(BaseModel):
     note: Optional[str] = None
 
 
+class MemoryUpdateRequest(BaseModel):
+    """记忆更新请求。userId 必填用于归属校验；其余字段为 None 表示不修改。"""
+    userId: str
+    memoryType: Optional[str] = None
+    keyword: Optional[str] = None
+    content: Optional[str] = None
+
+
 @app.get("/api/v1/memory/{user_id}", tags=["Memory"])
 async def get_user_memory(user_id: str, keyword: Optional[str] = None):
     """查询用户记忆"""
@@ -913,6 +921,9 @@ async def create_memory(request: MemoryCreateRequest):
                 keyword=keyword,
                 content=request.content,
             )
+            # 双写向量：与 LangChain 的 add_user_memory 工具保持同一口径。
+            # 历史版本这里只写 SQLite，导致编辑/删除时的向量同步全是空转。
+            _sync_memory_vector_on_create(request.userId, memory.id, request.content, request.memoryType)
             return APIResponse(
                 success=True,
                 message="Memory added",
@@ -926,6 +937,148 @@ async def create_memory(request: MemoryCreateRequest):
                 },
                 timestamp=datetime.utcnow().isoformat(),
             )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _sync_memory_vector_on_create(user_id: str, memory_id: int, content: str, memory_type: str = "fact") -> None:
+    """新建记忆后写入向量。与新增的 SQLite 行同事务语义不同——Chroma 失败只 warning。
+
+    写入 metadata 里带 memory_id，后续编辑/删除可按 id 精确清理。
+    """
+    try:
+        from app.ai.rag import get_rag_store
+        store = get_rag_store()
+        if store is None:
+            return
+        store.add_memory(user_id=user_id, content=content, memory_type=memory_type, memory_id=memory_id)
+    except Exception as e:
+        print(f"[memory] 向量写入失败（不影响数据库结果）: {e}")
+
+
+def _sync_memory_vector_on_update(
+    user_id: str, memory_id: int, old_content: str, new_content: str, memory_type: str = "fact"
+) -> None:
+    """记忆内容变更后同步向量：删旧 + 写新（自愈：旧向量不存在也照写新向量）。
+
+    Chroma 是检索加速层，事实源是 SQLite。这里任何异常都只记 warning 不外抛——
+    「SQLite 成功、Chroma 失败」不会让功能出错，因为 search_user_memory 走的是 SQL ilike。
+    写入一定要在删除之后无条件执行：历史数据可能压根没有向量（POST 端点曾漏写），
+    若因「没删到旧向量」就跳过写入，向量层会永久缺失这条记忆。
+    """
+    try:
+        from app.ai.rag import get_rag_store
+        store = get_rag_store()
+        if store is None:
+            return
+        store.delete_memory(user_id=user_id, memory_id=memory_id, content=old_content)
+        store.add_memory(
+            user_id=user_id, content=new_content, memory_type=memory_type, memory_id=memory_id
+        )
+    except Exception as e:
+        print(f"[memory] 向量同步失败（不影响数据库结果）: {e}")
+
+
+def _sync_memory_vector_on_delete(user_id: str, memory_id: int, content: str) -> None:
+    """记忆删除后清理向量。失败仅 warning，同上。"""
+    try:
+        from app.ai.rag import get_rag_store
+        store = get_rag_store()
+        if store is None:
+            return
+        store.delete_memory(user_id=user_id, memory_id=memory_id, content=content)
+    except Exception as e:
+        print(f"[memory] 向量清理失败（不影响数据库结果）: {e}")
+
+
+@app.put("/api/v1/memory/{memory_id}", tags=["Memory"])
+async def update_memory(memory_id: int, request: MemoryUpdateRequest):
+    """编辑记忆。
+
+    归属校验：userId 必须与记忆的 user_id 一致，否则按 404 处理（不区分「不存在」与「无权」，
+    避免通过状态码探测他人记忆是否存在）。
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MemoryService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MemoryService(db)
+            old = service.get_memory_by_id(memory_id)
+            if old is None or old.user_id != request.userId:
+                raise HTTPException(status_code=404, detail="记忆不存在")
+
+            old_content = old.content
+            memory = service.update_user_memory(
+                memory_id=memory_id,
+                user_id=request.userId,
+                memory_type=request.memoryType,
+                keyword=request.keyword,
+                content=request.content,
+            )
+            if memory is None:
+                raise HTTPException(status_code=404, detail="记忆不存在")
+
+            # 只有内容真变了才动向量；改分类不用重建
+            content_changed = old_content != memory.content
+            if content_changed:
+                _sync_memory_vector_on_update(
+                    request.userId, memory_id, old_content, memory.content, memory.memory_type
+                )
+
+            return APIResponse(
+                success=True,
+                message="Memory updated",
+                data={
+                    "id": memory.id,
+                    "userId": memory.user_id,
+                    "type": memory.memory_type,
+                    "keyword": memory.keyword,
+                    "content": memory.content,
+                    "createdAt": memory.created_at.isoformat() if memory.created_at else None,
+                },
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/memory/{memory_id}", tags=["Memory"])
+async def delete_memory(memory_id: int, userId: str):
+    """删除记忆。userId 走 query 参数（DELETE 不带 body 更符合规范）。"""
+    try:
+        from app.database import SessionLocal
+        from app.services.memory_service import MemoryService
+
+        if SessionLocal is None:
+            raise HTTPException(status_code=503, detail="数据库未配置或连接失败")
+
+        with SessionLocal() as db:
+            service = MemoryService(db)
+            old = service.get_memory_by_id(memory_id)
+            if old is None or old.user_id != userId:
+                raise HTTPException(status_code=404, detail="记忆不存在")
+
+            old_content = old.content
+            deleted = service.delete_user_memory(memory_id=memory_id, user_id=userId)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="记忆不存在")
+
+            _sync_memory_vector_on_delete(userId, memory_id, old_content)
+
+            return APIResponse(
+                success=True,
+                message="Memory deleted",
+                data={"id": memory_id},
+                timestamp=datetime.utcnow().isoformat(),
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

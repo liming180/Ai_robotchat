@@ -23,6 +23,8 @@ interface CompanionDto {
   intimacy?: number | null
   tags?: string | null
   createdAt?: string | null
+  isPreset?: boolean | null
+  createdBy?: string | null
 }
 
 export interface CreateCompanionPayload {
@@ -50,6 +52,8 @@ const dtoToCompanion = (dto: CompanionDto): Companion => ({
     .split(',')
     .map(t => t.trim())
     .filter(Boolean),
+  isPreset: Boolean(dto.isPreset),
+  createdBy: dto.createdBy || '',
 })
 
 const companionToPayload = (c: Companion | CreateCompanionPayload) => ({
@@ -223,6 +227,24 @@ export const useCompanionStore = defineStore('companion', () => {
     return companion
   }
 
+  /**
+   * 删除自定义伴侣。
+   *
+   * 后端会级联清理：8002 知识库与向量 → MySQL 的 conversation/message/user_companion/companion。
+   * 8002 不可用时后端返回 502，此时前端会收到错误，本地状态不变（保持与后端一致）。
+   */
+  async function deleteCompanion(id: string): Promise<void> {
+    await javaFetch<null>(`/api/v1/companions/${id}`, { method: 'DELETE' })
+    const index = companions.value.findIndex(c => c.id === id)
+    if (index !== -1) companions.value.splice(index, 1)
+    writeCache(companions.value)
+  }
+
+  /** 是否允许编辑/删除：非预置且由当前用户创建。前端用于隐藏入口，后端仍有同样校验。 */
+  function canManage(companion: Companion, userId: string): boolean {
+    return !companion.isPreset && Boolean(userId) && companion.createdBy === userId
+  }
+
   return {
     companions,
     allCompanions,
@@ -240,5 +262,7 @@ export const useCompanionStore = defineStore('companion', () => {
     increaseIntimacy,
     createCompanion,
     updateCompanion,
+    deleteCompanion,
+    canManage,
   }
 })

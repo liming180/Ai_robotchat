@@ -9,12 +9,18 @@ export function useMemorySystem() {
   const selectedCategory = ref<string>('all')
   const searchQuery = ref<string>('')
   const showForm = ref(false)
-  /** 本轮只支持新增：Python 端没有 update 端点，编辑入口不展示 */
-  const canEdit = false
+  /** 记忆编辑/删除已开放（T-5，任务十） */
+  const canEdit = true
   const saving = ref(false)
   const saveError = ref('')
 
   const newMemory = ref<{ type: MemoryType; content: string }>({ type: 'preference', content: '' })
+  /** 正在编辑的记录 id；为空表示新增模式 */
+  const editingId = ref('')
+  /** 待删除的记录；非 null 时删除确认框可见 */
+  const deleteTarget = ref<Memory | null>(null)
+  const deleting = ref(false)
+  const deleteError = ref('')
 
   const memoryCategories: MemoryCategory[] = MEMORY_CATEGORIES
 
@@ -37,27 +43,75 @@ export function useMemorySystem() {
   const load = () => memoryStore.loadMemories()
 
   const openAddForm = () => {
+    editingId.value = ''
     newMemory.value = { type: 'preference', content: '' }
     saveError.value = ''
     showForm.value = true
   }
 
-  /** 新增记忆：写 Python 后端，失败时在表单内提示，不关闭表单 */
+  /** 打开编辑表单，回填当前记录 */
+  const openEditForm = (memory: Memory) => {
+    editingId.value = memory.id
+    newMemory.value = { type: memory.type, content: memory.content }
+    saveError.value = ''
+    showForm.value = true
+  }
+
+  const cancelForm = () => {
+    showForm.value = false
+    editingId.value = ''
+    saveError.value = ''
+    newMemory.value = { type: 'preference', content: '' }
+  }
+
+  /** 保存记忆：新增与编辑共用同一表单，按 editingId 分支 */
   const saveMemory = async () => {
     if (!newMemory.value.content.trim() || saving.value) return
     saving.value = true
     saveError.value = ''
+    const payload = {
+      type: newMemory.value.type,
+      content: newMemory.value.content.trim(),
+    }
     try {
-      await memoryStore.addMemory({
-        type: newMemory.value.type,
-        content: newMemory.value.content.trim(),
-      })
-      showForm.value = false
-      newMemory.value = { type: 'preference', content: '' }
+      if (editingId.value) {
+        await memoryStore.updateMemory(editingId.value, payload)
+      } else {
+        await memoryStore.addMemory(payload)
+      }
+      cancelForm()
     } catch (e) {
-      saveError.value = `保存失败：${(e as Error).message}`
+      saveError.value = `${editingId.value ? '保存' : '新增'}失败：${(e as Error).message}`
     } finally {
       saving.value = false
+    }
+  }
+
+  // ---------- 删除 ----------
+  const openDeleteDialog = (memory: Memory) => {
+    deleteTarget.value = memory
+    deleteError.value = ''
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleting.value) return
+    deleteTarget.value = null
+    deleteError.value = ''
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget.value || deleting.value) return
+    deleting.value = true
+    deleteError.value = ''
+    try {
+      await memoryStore.deleteMemory(deleteTarget.value.id)
+      // 删的正好是编辑中的那条，顺手关表单，避免保存到已删除的记录
+      if (editingId.value && editingId.value === deleteTarget.value.id) cancelForm()
+      deleteTarget.value = null
+    } catch (e) {
+      deleteError.value = `删除失败：${(e as Error).message}`
+    } finally {
+      deleting.value = false
     }
   }
 
@@ -74,6 +128,10 @@ export function useMemorySystem() {
     saving,
     saveError,
     newMemory,
+    editingId,
+    deleteTarget,
+    deleting,
+    deleteError,
     memoryCategories,
     loading: computed(() => memoryStore.loading),
     error: computed(() => memoryStore.error),
@@ -82,7 +140,12 @@ export function useMemorySystem() {
     getMemoryCount,
     load,
     openAddForm,
+    openEditForm,
+    cancelForm,
     saveMemory,
+    openDeleteDialog,
+    closeDeleteDialog,
+    confirmDelete,
     searchMemories,
     getPersonalizedPrompt,
   }

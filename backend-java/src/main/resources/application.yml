@@ -32,13 +32,21 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 jwt:
-  secret: your-super-secret-key-at-least-256-bits-long-for-hs256-algorithm
+  # 生产环境必须通过环境变量 JWT_SECRET 注入（HS256 要求至少 256 位 = 32 字节）。
+  # 冒号后的兜底值仅供本地开发，切勿在部署环境沿用；未设置时会打印告警（见 JwtUtil）。
+  secret: ${JWT_SECRET:your-super-secret-key-at-least-256-bits-long-for-hs256-algorithm}
   expiration: 7200000
   refresh-expiration: 604800000
 
 ai:
   service:
     url: http://localhost:5000
+
+rag:
+  service:
+    # 8002 RAG-Knowledge-System：伴侣删除时按 companionId 列出并删除其知识库（含 Chroma 向量）
+    # 实际调用前缀为 /api/v1/kb（见 RagClient），本项只配 host:port
+    url: http://localhost:8002
 
 app:
   # 图片本地上传目录。相对路径按 Java 进程的工作目录解析，实际映射到绝对路径后由 /uploads/** 暴露。

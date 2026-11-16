@@ -222,12 +222,78 @@ class RAGStore:
         return [d for s, d in scored[:k] if s > 0]
 
     # ---------- 快捷入口 ----------
-    def add_memory(self, user_id: str, content: str, memory_type: str = "fact") -> int:
-        """写入用户记忆（带 user_id 元数据）"""
-        return self.add_texts(
-            [content],
-            metadatas=[{"user_id": user_id, "memory_type": memory_type, "source": "memory"}],
-        )
+    def add_memory(
+        self,
+        user_id: str,
+        content: str,
+        memory_type: str = "fact",
+        memory_id: Optional[int] = None,
+    ) -> int:
+        """写入用户记忆（带 user_id 元数据）。
+
+        memory_id：SQLite user_memories.id。写入 metadata 后，编辑/删除记忆
+        可按 memory_id 精确反查并清理对应向量；历史数据无此字段，走内容近似匹配兜底。
+        ids 用 ``mem_{memory_id}`` 作为 base_id，便于后续按 id 前缀批量删除。
+        """
+        meta: Dict[str, Any] = {
+            "user_id": user_id,
+            "memory_type": memory_type,
+            "source": "memory",
+        }
+        if memory_id is not None:
+            meta["memory_id"] = memory_id
+
+        ids = [f"mem_{memory_id}"] if memory_id is not None else None
+        return self.add_texts([content], metadatas=[meta], ids=ids)
+
+    def delete_memory(
+        self,
+        user_id: str,
+        memory_id: Optional[int] = None,
+        content: Optional[str] = None,
+    ) -> int:
+        """删除某条用户记忆对应的向量，返回删除的分块数。失败不抛异常，返回 0。
+
+        两级策略（对应「metadata 补 memory_id + 存量向量近似清理」决策）：
+        1. 有 memory_id：按 id 前缀 ``mem_{id}::chunk_*`` 精确删除（新数据）；
+        2. 无 memory_id 或精确删除未命中：按 metadata 里 ``user_id + source=memory``
+           过滤候选，再用正文全等匹配挑出目标（历史数据）。
+           注：Chroma 的 ``where`` 只支持等值/IN，不支持正文模糊匹配，
+           故先按 user_id 拉出全部 memory 类文档，Python 侧比对 page_content。
+        """
+        if memory_id is not None and self._store is not None:
+            try:
+                # 先试着按 ids 精准删（chunk 数量未知，用 where 过滤 memory_id 更稳）
+                self._store.delete(where={"memory_id": memory_id})
+                return 1
+            except Exception as e:
+                print(f"[RAG] 按 memory_id 删向量失败，转内容匹配: {e}")
+
+        # 历史数据兜底：按 user_id + 正文全等定位
+        if content and self._store is not None:
+            try:
+                hits = self._store.get(where={"user_id": user_id})
+                ids = hits.get("ids") or []
+                docs = hits.get("documents") or []
+                target_ids = [i for i, d in zip(ids, docs) if d == content]
+                if target_ids:
+                    self._store.delete(ids=target_ids)
+                    return len(target_ids)
+            except Exception as e:
+                print(f"[RAG] 按内容删向量失败: {e}")
+
+        # 内存兜底
+        before = len(self._memory_docs)
+        self._memory_docs = [
+            d for d in self._memory_docs
+            if not (
+                d.metadata.get("source") == "memory"
+                and d.metadata.get("user_id") == user_id
+                and (memory_id is None or d.metadata.get("memory_id") == memory_id)
+                and (content is None or d.page_content == content)
+            )
+        ]
+        return before - len(self._memory_docs)
 
     def add_knowledge(self, title: str, content: str, category: str = "general") -> int:
         """写入知识库条目"""

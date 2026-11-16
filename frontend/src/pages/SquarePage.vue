@@ -134,15 +134,33 @@
               <span class="category-icon" :class="`category-${categoryKey(companion.category)}`">
                 <component :is="categoryIcon(companion.category)" :size="16" />
               </span>
-              <button
-                type="button"
-                :title="companion.isFavorite ? '取消收藏' : '加入收藏'"
-                :aria-label="companion.isFavorite ? '取消收藏' : '加入收藏'"
-                :class="['favorite-button', { active: companion.isFavorite }]"
-                @click.stop="toggleFavorite(companion.id)"
-              >
-                <Heart :size="19" :fill="companion.isFavorite ? 'currentColor' : 'none'" />
-              </button>
+              <div class="topline-actions">
+                <!-- 仅自定义伴侣显示管理菜单，预置伴侣无此入口 -->
+                <div v-if="companionStore.canManage(companion, userStore.userId)" class="manage-wrap">
+                  <button
+                    type="button"
+                    title="管理伴侣"
+                    aria-label="管理伴侣"
+                    class="manage-button"
+                    @click.stop="toggleMenu(companion.id)"
+                  >
+                    <MoreHorizontal :size="19" />
+                  </button>
+                  <div v-if="openMenuId === companion.id" class="manage-menu" @click.stop>
+                    <button type="button" @click="editCompanion(companion.id)">编辑</button>
+                    <button type="button" class="danger" @click="openDeleteDialog(companion)">删除</button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  :title="companion.isFavorite ? '取消收藏' : '加入收藏'"
+                  :aria-label="companion.isFavorite ? '取消收藏' : '加入收藏'"
+                  :class="['favorite-button', { active: companion.isFavorite }]"
+                  @click.stop="toggleFavorite(companion.id)"
+                >
+                  <Heart :size="19" :fill="companion.isFavorite ? 'currentColor' : 'none'" />
+                </button>
+              </div>
             </div>
 
             <div class="avatar-wrap" :class="`avatar-tone-${index % 6}`">
@@ -183,11 +201,47 @@
         </div>
       </section>
     </main>
+
+    <!-- 删除伴侣二次确认：级联删除不可逆，要求输入伴侣名 -->
+    <div v-if="deleteTarget" class="modal-backdrop" @click.self="closeDeleteDialog">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <h2 id="delete-title">删除伴侣「{{ deleteTarget.name }}」？</h2>
+        <p class="modal-warning">此操作不可恢复，将永久删除：</p>
+        <ul class="modal-list">
+          <li>与该伴侣的全部聊天记录（会话与消息）</li>
+          <li>该伴侣的收藏状态与默契值</li>
+          <li>该伴侣绑定的知识库与向量数据</li>
+        </ul>
+        <p class="modal-note">你的个人记忆与心情记录不受影响（它们属于账号级数据）。</p>
+        <label class="modal-label">
+          请输入伴侣名称 <strong>{{ deleteTarget.name }}</strong> 以确认
+          <input
+            v-model="deleteConfirmName"
+            type="text"
+            class="modal-input"
+            placeholder="在此输入伴侣名称"
+            @keydown.enter="confirmDelete"
+          />
+        </label>
+        <p v-if="deleteError" class="modal-error" role="alert">{{ deleteError }}</p>
+        <div class="modal-actions">
+          <button type="button" class="modal-cancel" @click="closeDeleteDialog">取消</button>
+          <button
+            type="button"
+            class="modal-confirm"
+            :disabled="deleteConfirmName !== deleteTarget.name || deleting"
+            @click="confirmDelete"
+          >
+            {{ deleting ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight,
@@ -198,6 +252,7 @@ import {
   HeartHandshake,
   Laugh,
   MessagesSquare,
+  MoreHorizontal,
   Plus,
   Search,
   SearchX,
@@ -206,10 +261,16 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useCompanionStore } from '@/stores/companion'
+import { useUserStore } from '@/stores/user'
 import { createSvgAvatarDataUrl } from '@/lib/avatar'
+import type { Companion } from '@/types'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
+const userStore = useUserStore()
+
+/** 当前展开管理菜单的伴侣 id；同一时刻只允许一个菜单打开 */
+const openMenuId = ref('')
 
 const searchQuery = ref('')
 const selectedCategory = ref('全部')
@@ -218,7 +279,17 @@ const categories = computed(() => companionStore.categories)
 
 onMounted(() => {
   companionStore.loadCompanions()
+  // 点击页面空白处关闭管理菜单（菜单内部点击已 stop 冒泡）
+  document.addEventListener('click', closeMenuOnOutsideClick)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeMenuOnOutsideClick)
+})
+
+const closeMenuOnOutsideClick = () => {
+  openMenuId.value = ''
+}
 
 const filteredCompanions = computed(() => {
   const categoryMatches = selectedCategory.value === '全部'
@@ -274,6 +345,55 @@ const handleCompanionAvatarError = (event: Event) => {
   const seed = img.dataset.seed || String(Date.now())
   const name = img.dataset.label || 'AI'
   img.src = createSvgAvatarDataUrl({ seed, label: name.trim().slice(-1) || 'AI' })
+}
+
+// ---------- 伴侣管理（编辑 / 删除） ----------
+const toggleMenu = (id: string) => {
+  openMenuId.value = openMenuId.value === id ? '' : id
+}
+
+/** 编辑走 CreatePage 的编辑模式（?edit=id），表单字段与创建完全一致，避免两套实现漂移 */
+const editCompanion = (id: string) => {
+  openMenuId.value = ''
+  router.push({ path: '/create', query: { edit: id } })
+}
+
+/** 待删除的伴侣；非 null 时删除模态可见 */
+const deleteTarget = ref<Companion | null>(null)
+const deleteConfirmName = ref('')
+const deleteError = ref('')
+const deleting = ref(false)
+
+const openDeleteDialog = (companion: Companion) => {
+  openMenuId.value = ''
+  deleteTarget.value = companion
+  deleteConfirmName.value = ''
+  deleteError.value = ''
+}
+
+const closeDeleteDialog = () => {
+  if (deleting.value) return
+  deleteTarget.value = null
+  deleteConfirmName.value = ''
+  deleteError.value = ''
+}
+
+const confirmDelete = async () => {
+  if (!deleteTarget.value || deleting.value) return
+  if (deleteConfirmName.value !== deleteTarget.value.name) return
+
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await companionStore.deleteCompanion(deleteTarget.value.id)
+    deleteTarget.value = null
+    deleteConfirmName.value = ''
+  } catch (e) {
+    // 后端 502 表示知识库服务不可用、伴侣未删除；此处如实展示，让用户可重试
+    deleteError.value = `删除失败：${(e as Error).message}`
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -536,6 +656,101 @@ const handleCompanionAvatarError = (event: Event) => {
 .empty-state h3 { margin: 18px 0 7px; font-size: 19px; }
 .empty-state p { margin: 0; color: #8d8f89; font-size: 14px; }
 .empty-state button { margin-top: 22px; padding: 10px 16px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; color: #f3f0e9; background: transparent; cursor: pointer; }
+
+/* ---------- 伴侣管理菜单 ---------- */
+.topline-actions { display: flex; align-items: center; gap: 8px; }
+.manage-wrap { position: relative; }
+.manage-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #a9aca5;
+  background: transparent;
+  cursor: pointer;
+}
+.manage-button:hover { color: #fffaf2; background: rgba(255, 255, 255, .08); }
+
+.manage-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 118px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  background: #1b1e1c;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+}
+.manage-menu button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: #e8e5de;
+  font-size: 14px;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.manage-menu button:hover { background: rgba(255, 255, 255, .08); }
+.manage-menu button.danger { color: #ff8f7a; }
+.manage-menu button.danger:hover { background: rgba(255, 143, 122, .12); }
+
+/* ---------- 删除确认模态 ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(6, 8, 7, .72);
+  backdrop-filter: blur(6px);
+}
+.modal-card {
+  width: min(100%, 480px);
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 18px;
+  background: #171a18;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+.modal-card h2 { margin: 0 0 14px; color: #fffaf2; font-size: 21px; }
+.modal-warning { margin: 0 0 8px; color: #ffb3a1; font-size: 14px; }
+.modal-list { margin: 0 0 14px; padding-left: 20px; color: #c7c9c3; font-size: 14px; line-height: 1.8; }
+.modal-note { margin: 0 0 18px; color: #8d8f89; font-size: 13px; }
+.modal-label { display: block; color: #c7c9c3; font-size: 14px; }
+.modal-label strong { color: #fffaf2; }
+.modal-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 10px;
+  color: #f6f4ef;
+  background: rgba(255, 255, 255, .04);
+  outline: none;
+}
+.modal-input:focus { border-color: rgba(255, 139, 114, .55); }
+.modal-error { margin: 12px 0 0; color: #ff8f7a; font-size: 13px; }
+.modal-actions { display: flex; gap: 12px; margin-top: 22px; }
+.modal-cancel,
+.modal-confirm {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-cancel { border: 1px solid rgba(255, 255, 255, .16); color: #d7d9d3; background: transparent; }
+.modal-confirm { border: 0; color: #2a0f0a; background: #ff8b72; }
+.modal-confirm:disabled { opacity: .45; cursor: not-allowed; }
 
 @media (max-width: 960px) {
   .page-content { width: min(100% - 36px, 760px); padding-top: 52px; }

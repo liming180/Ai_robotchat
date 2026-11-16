@@ -12,6 +12,10 @@ export interface Companion {
   intimacy: number
   createdAt: Date
   tags: string[]
+  /** 预置伴侣（preset-1~4）不可编辑/删除，前端据此隐藏入口 */
+  isPreset?: boolean
+  /** 创建者 userId；'system' 表示系统预置 */
+  createdBy?: string
 }
 
 // 消息类型定义
@@ -41,6 +45,8 @@ export interface Note {
   content: string
   tags: string[]
   createdAt: Date
+  /** 后端在每次更新时刷新；列表按此倒序 */
+  updatedAt: Date
 }
 
 // 用户资料类型定义

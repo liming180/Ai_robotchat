@@ -262,6 +262,7 @@ class LangChainGLMClient:
             keyword = content[:20]
             ok_db = False
             ok_rag = False
+            memory_id = None
 
             try:
                 from app.database import SessionLocal
@@ -269,12 +270,15 @@ class LangChainGLMClient:
 
                 if SessionLocal is not None:
                     with SessionLocal() as db:
-                        MemoryService(db).add_user_memory(
+                        saved = MemoryService(db).add_user_memory(
                             user_id=user_id,
                             memory_type=memory_type,
                             keyword=keyword,
                             content=content,
                         )
+                        # 先落库拿到自增 id，再把它写进向量 metadata，
+                        # 后续编辑/删除记忆时才能精确反查并清理对应向量
+                        memory_id = saved.id
                         ok_db = True
             except Exception as e:
                 print("[add_user_memory] db failed: " + str(e))
@@ -283,7 +287,12 @@ class LangChainGLMClient:
                 from app.ai.rag import get_rag_store
                 store = get_rag_store()
                 if store is not None:
-                    store.add_memory(user_id=user_id, content=content, memory_type=memory_type)
+                    store.add_memory(
+                        user_id=user_id,
+                        content=content,
+                        memory_type=memory_type,
+                        memory_id=memory_id,
+                    )
                     ok_rag = True
             except Exception as e:
                 print("[add_user_memory] rag failed: " + str(e))

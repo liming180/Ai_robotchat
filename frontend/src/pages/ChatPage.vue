@@ -91,7 +91,9 @@
             <span>{{ currentCompanion.intimacy }}%</span>
           </div>
           <button
-            @click="$router.push(`/settings/${currentCompanion?.id}`)"
+            @click="$router.push({ path: '/create', query: { edit: currentCompanion?.id } })"
+            title="编辑伴侣人设"
+            aria-label="编辑伴侣人设"
             class="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -133,13 +133,56 @@ export const useMemoryStore = defineStore('memory', () => {
     return memory
   }
 
-  /** 二期能力：Python 端无 update / delete 端点 */
-  function updateMemory(): never {
-    throw new Error('记忆编辑暂未开放（后端未提供更新接口）')
+  /**
+   * 编辑记忆。Python 端 PUT /api/v1/memory/{id}，userId 用于归属校验。
+   * 只有内容真变了才重建 keyword（与后端 update_user_memory 的口径一致）。
+   */
+  async function updateMemory(
+    id: string,
+    patch: { type?: MemoryType; content?: string },
+  ): Promise<Memory> {
+    const userId = currentUserId()
+    if (!userId) throw new Error('未登录，无法修改记忆')
+
+    const index = memories.value.findIndex(m => m.id === id)
+    if (index === -1) throw new Error('记忆不存在或已被删除')
+
+    const current = memories.value[index]
+    const content = patch.content?.trim()
+    const body: Record<string, unknown> = { userId }
+    if (patch.type !== undefined) body.memoryType = patch.type
+    if (content !== undefined) {
+      body.content = content
+      // 内容变了才重建 keyword，纯改分类不动它
+      if (content !== current.content) {
+        body.keyword = content.length <= 20 ? content : `${content.slice(0, 20)}...`
+      }
+    }
+
+    const dto = await aiFetch<MemoryDto>(`/api/v1/memory/${id}`, {
+      method: 'PUT',
+      body,
+    })
+
+    const updated = toMemory(dto)
+    // 同新增：保留用户选择的分类，Python 侧可能标准化了 memoryType
+    if (patch.type !== undefined) updated.type = patch.type
+    memories.value[index] = updated
+    writeCache()
+    return updated
   }
 
-  function deleteMemory(): never {
-    throw new Error('记忆删除暂未开放（后端未提供删除接口）')
+  /** 删除记忆。DELETE /api/v1/memory/{id}?userId=xxx */
+  async function deleteMemory(id: string): Promise<void> {
+    const userId = currentUserId()
+    if (!userId) throw new Error('未登录，无法删除记忆')
+
+    await aiFetch<{ id: number }>(`/api/v1/memory/${id}?userId=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    })
+
+    memories.value = memories.value.filter(m => m.id !== id)
+    writeCache()
   }
 
   const getCountByCategory = (type: MemoryType) =>

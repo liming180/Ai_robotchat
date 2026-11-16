@@ -41,9 +41,11 @@
               class="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
             />
           </div>
+          <!-- appearance-none + 自绘箭头：原生箭头在深色背景下几乎不可见，会被误认成普通输入框 -->
           <select
             v-model="selectedTime"
-            class="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+            class="pl-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all appearance-none bg-no-repeat cursor-pointer"
+            style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E&quot;); background-position: right 0.75rem center;"
           >
             <option value="all">全部时间</option>
             <option value="today">今天</option>
@@ -225,12 +227,20 @@ const getCompanionName = (companionId: string) => {
   return companionStore.getCompanionById(companionId)?.name || '未知'
 }
 
+/**
+ * 卡片摘要 = 首条**用户**消息，与标题同源。
+ *
+ * 历史版本取的是 `messages[最后一条]`，而聊天每轮都是 user → assistant 两条，
+ * 最后一条必然是 AI 回复：摘要显示成 AI 的话，与取自首条用户消息的标题对不上，
+ * 看起来像「串会话」，实际是取值口径错了。
+ *
+ * 无用户消息时回退到标题（纯图片会话的首条可能没有文本），再没有就显示占位。
+ */
 const getPreviewText = (conversation: typeof chatStore.conversations[0]) => {
-  const lastMessage = conversation.messages[conversation.messages.length - 1]
-  if (!lastMessage) return '暂无消息'
-  return lastMessage.content.length > 60 
-    ? lastMessage.content.slice(0, 60) + '...' 
-    : lastMessage.content
+  const firstUserMessage = conversation.messages.find(m => m.role === 'user')
+  const source = firstUserMessage?.content?.trim() || conversation.title
+  if (!source) return '暂无消息'
+  return source.length > 60 ? source.slice(0, 60) + '...' : source
 }
 
 const formatTime = (date: Date) => {
