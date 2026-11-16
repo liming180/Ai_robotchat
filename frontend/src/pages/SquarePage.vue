@@ -35,7 +35,7 @@
       <section class="discovery-tools" aria-label="搜索和筛选">
         <label class="search-box">
           <Search :size="20" />
-          <input v-model.trim="searchQuery" type="search" placeholder="搜索名字、性格或标签" aria-label="搜索 AI 伴侣" />
+          <input ref="searchInput" v-model.trim="searchQuery" type="search" placeholder="搜索名字、性格或标签" aria-label="搜索 AI 伴侣" />
           <button v-if="searchQuery" type="button" title="清空搜索" aria-label="清空搜索" @click="searchQuery = ''">
             <X :size="17" />
           </button>
@@ -272,6 +272,7 @@ const userStore = useUserStore()
 /** 当前展开管理菜单的伴侣 id；同一时刻只允许一个菜单打开 */
 const openMenuId = ref('')
 
+const searchInput = ref<HTMLInputElement | null>(null)
 const searchQuery = ref('')
 const selectedCategory = ref('全部')
 /** 分类由后端返回的数据去重生成（Java 预置分类是 日常聊天/知识问答/情感陪伴/趣味探索） */
@@ -281,14 +282,41 @@ onMounted(() => {
   companionStore.loadCompanions()
   // 点击页面空白处关闭管理菜单（菜单内部点击已 stop 冒泡）
   document.addEventListener('click', closeMenuOnOutsideClick)
+  window.addEventListener('keydown', focusSearchOnShortcut)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeMenuOnOutsideClick)
+  window.removeEventListener('keydown', focusSearchOnShortcut)
 })
 
 const closeMenuOnOutsideClick = () => {
   openMenuId.value = ''
+}
+
+/**
+ * Ctrl+K / Cmd+K 聚焦搜索框，与输入框右侧 <kbd>⌘ K</kbd> 提示对应。
+ *
+ * 两个守卫：
+ * 1. 焦点已在其它输入控件内（典型是删除确认模态的 `.modal-input`，要求精确输入伴侣名
+ *    才能点「确认删除」）时不抢焦点，否则会打断高风险操作的输入；
+ * 2. 守卫生效时仍 preventDefault，保证本页 Ctrl+K 不会被浏览器抢去聚焦地址栏。
+ */
+const focusSearchOnShortcut = (e: KeyboardEvent) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return
+
+  const active = document.activeElement as HTMLElement | null
+  const editingElsewhere = Boolean(active)
+    && active !== searchInput.value
+    && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+
+  if (editingElsewhere) {
+    e.preventDefault()
+    return
+  }
+
+  e.preventDefault()
+  searchInput.value?.focus()
 }
 
 const filteredCompanions = computed(() => {

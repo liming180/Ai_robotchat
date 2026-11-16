@@ -10,6 +10,7 @@ import HistoryPage from '@/pages/HistoryPage.vue'
 import MemoryManagement from '@/pages/MemoryManagement.vue'
 import EmotionCalendar from '@/pages/EmotionCalendar.vue'
 import NotesPage from '@/pages/NotesPage.vue'
+import NotFoundPage from '@/pages/NotFoundPage.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -71,6 +72,12 @@ const routes: RouteRecordRaw[] = [
     path: '/notes',
     name: 'notes',
     component: NotesPage,
+  },
+  {
+    // 必须放路由表末尾：未匹配路径统一落到 404 页，避免整页空白。
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: NotFoundPage,
   },
 ]
 

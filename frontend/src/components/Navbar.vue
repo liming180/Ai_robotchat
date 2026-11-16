@@ -14,8 +14,7 @@
         <div class="hidden md:flex items-center gap-8">
           <a href="#features" class="text-slate-300 hover:text-white transition-colors">功能特点</a>
           <router-link to="/square" class="text-slate-300 hover:text-white transition-colors">AI 伴侣</router-link>
-          <a href="#pricing" class="text-slate-300 hover:text-white transition-colors">价格方案</a>
-          
+
           <!-- 根据登录状态显示不同内容 -->
           <div class="flex items-center gap-4">
             <template v-if="userStore.isAuthenticated">
@@ -74,8 +73,7 @@
         <div class="flex flex-col gap-4">
           <a href="#features" class="text-slate-300 hover:text-white transition-colors">功能特点</a>
           <router-link to="/square" class="text-slate-300 hover:text-white transition-colors">AI 伴侣</router-link>
-          <a href="#pricing" class="text-slate-300 hover:text-white transition-colors">价格方案</a>
-          
+
           <div class="pt-2 border-t border-white/10">
             <template v-if="userStore.isAuthenticated">
               <div class="flex items-center gap-3 mb-4">

@@ -44,6 +44,14 @@ const getCompanionName = (id: string) => {
   return companion?.name || '未知'
 }
 
+/** 下拉选项文案：带描述前缀区分同名伴侣（如两个「小智」），描述超 12 字截断 */
+const companionOptionLabel = (companion: { name: string; description: string }) => {
+  const desc = companion.description.trim()
+  if (!desc) return companion.name
+  const brief = desc.length > 12 ? `${desc.slice(0, 12)}…` : desc
+  return `${companion.name} · ${brief}`
+}
+
 onMounted(async () => {
   await Promise.all([noteStore.loadNotes(), companionStore.loadCompanions()])
 })
@@ -261,10 +269,10 @@ const formatDate = (date: Date) => {
         <label class="block text-sm font-medium text-gray-600 mb-1">来自</label>
         <select
           v-model="editCompanionId"
-          class="w-full px-4 py-3 rounded-xl glass-input focus:outline-none focus:ring-2 focus:ring-pink-300 mb-4"
+          class="w-full px-4 py-3 rounded-xl glass-input text-gray-800 focus:outline-none focus:ring-2 focus:ring-pink-300 mb-4"
         >
           <option v-if="companionOptions.length === 0" value="" disabled>还没有可选伴侣</option>
-          <option v-for="c in companionOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+          <option v-for="c in companionOptions" :key="c.id" :value="c.id">{{ companionOptionLabel(c) }}</option>
         </select>
 
         <label class="block text-sm font-medium text-gray-600 mb-1">内容</label>

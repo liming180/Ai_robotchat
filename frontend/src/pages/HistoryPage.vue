@@ -61,7 +61,11 @@
         {{ chatStore.error }}
       </p>
 
-      <div v-if="groupedConversations.length > 0" class="space-y-8">
+      <div v-if="loading" class="text-center py-20">
+        <p class="text-slate-400">加载中…</p>
+      </div>
+
+      <div v-else-if="groupedConversations.length > 0" class="space-y-8">
         <div v-for="group in groupedConversations" :key="group.date" class="space-y-4">
           <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">{{ group.date }}</h3>
           <div class="space-y-3">
@@ -153,13 +157,21 @@ const companionStore = useCompanionStore()
 const searchQuery = ref('')
 const selectedTime = ref('all')
 const showClearConfirm = ref(false)
+/** 首屏加载态：数据未到时不渲染空态，避免「暂无聊天记录」先闪一下 */
+const loading = ref(true)
 
 onMounted(async () => {
-  // 历史页需要消息内容做预览与搜索，因此带 messages 拉全量
-  await Promise.all([
-    companionStore.loadCompanions(),
-    chatStore.loadConversations(undefined, true),
-  ])
+  // 历史页需要消息内容做预览与搜索，因此带 messages 拉全量。
+  // 成功失败都置 false：失败时也要落到空态/错误提示，不能卡在「加载中」。
+  loading.value = true
+  try {
+    await Promise.all([
+      companionStore.loadCompanions(),
+      chatStore.loadConversations(undefined, true),
+    ])
+  } finally {
+    loading.value = false
+  }
 })
 
 const filteredConversations = computed(() => {

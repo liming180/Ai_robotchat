@@ -71,19 +71,19 @@
       <div class="grid grid-cols-3 gap-4">
         <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
           <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ emotionStats.total }}
+            {{ loading ? '—' : emotionStats.total }}
           </div>
           <div class="text-slate-400 text-sm mt-2">总记录</div>
         </div>
         <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
           <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ emotionStats.total ? emotionMeta[emotionStats.dominant].label : '—' }}
+            {{ loading || !emotionStats.total ? '—' : emotionMeta[emotionStats.dominant].label }}
           </div>
           <div class="text-slate-400 text-sm mt-2">主导情绪</div>
         </div>
         <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
           <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ recordedKinds }}
+            {{ loading ? '—' : recordedKinds }}
           </div>
           <div class="text-slate-400 text-sm mt-2">情绪种类</div>
         </div>
@@ -163,6 +163,9 @@ const {
   error,
 } = useEmotionAnalysis()
 
+/** 首屏统计卡加载态：数据未到时显示「—」，避免 0 → 真实值闪变 */
+const loading = ref(true)
+
 const emotionStats = computed(() => getEmotionStats())
 const recordedKinds = computed(() =>
   Object.values(emotionStats.value.distribution).filter(count => count > 0).length
@@ -227,8 +230,14 @@ const formatDate = (date: Date) => {
   return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
-onMounted(() => {
-  // 拉最近 30 天，覆盖整月日历的需求
-  load(30)
+onMounted(async () => {
+  // 拉最近 30 天，覆盖整月日历的需求。
+  // 成功失败都置 false：失败时也要恢复可交互，不能永远停在「—」。
+  loading.value = true
+  try {
+    await load(30)
+  } finally {
+    loading.value = false
+  }
 })
 </script>
