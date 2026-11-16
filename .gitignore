@@ -93,7 +93,12 @@ backend-java/uploads/
 !RAG-Knowledge-System/backend/.env.example
 # 前端开发环境地址 + token 模板（无密钥，需入库供新环境复制）
 !frontend/.env.example
+# Java 后端环境变量模板（MYSQL_PASSWORD / REDIS_PASSWORD / JWT_SECRET，值留空）
+!backend-java/.env.example
 # 注意：frontend/.env.development 含 SERVICE_TOKEN，不入库
 
 # 例外：lib/ 是 Python 模板规则，误伤前端源码目录（avatar.ts/utils.ts/api.ts）
 !frontend/src/lib/
+
+# Git Bash 崩溃转储（偶发产生，不入库）
+*.stackdump

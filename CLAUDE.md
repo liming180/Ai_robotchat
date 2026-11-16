@@ -46,10 +46,15 @@ cd RAG-Knowledge-System/backend
 pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8002
 
-# 一键启停（推荐，独立进程 + 日志到 logs/）
+# 一键启停（推荐）：四个服务统一走同一套 Start-Process + 重定向逻辑
 powershell -NoProfile -File scripts/start-all.ps1
-powershell -NoProfile -File scripts/stop-all.ps1    # 按 CommandLine 匹配，能杀掉 reload 孤儿子进程
+powershell -NoProfile -File scripts/stop-all.ps1    # 按端口反查进程树，含 Java 8081
+powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个服务
 ```
+
+**日志口径（2026-11-16 收口）**：统一写 `logs/<name>.out.log` / `<name>.error.log`，name ∈ `frontend-3000` / `ai-5000` / `java-8081` / `rag-8002`。**每次启动前把旧日志归档**为 `<name>.<stream>.<时间戳>.log`（因为 `Start-Process -RedirectStandardOutput` 会截断目标文件，不归档就会丢上次输出），每个服务每种流保留最近 5 个归档，超出自动删除。历史日志在 `logs/archive/`。
+
+> ⚠ 不要在 bash 里拼 `-RedirectStandardOutput "D:\path\\$VAR"`：bash 双引号会把 `\\` 折成 `\` 且把 `$VAR` 展开成空串，得到畸形路径（`D:\Ai_robotchat$VAR`），日志写到项目根目录且文件名不对——看起来像「重定向不生效」，实际是路径拼错。
 
 测试：Python 测试为 pytest 风格（`backend/tests/test_*.py`，pytest 未列入 requirements，需单独 `pip install pytest`）；单个测试用 `pytest tests/test_prompts.py::测试函数名`。`tests/manual_rag_tool_test.py` 是手动回归脚本（需 5000/8002 在线），pytest 不收集。Java 与 RAG 服务当前无自动化测试。
 

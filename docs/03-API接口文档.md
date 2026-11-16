@@ -217,9 +217,33 @@ Query 参数（均可选）：`category` 分类、`search` 关键词、`favorite
 
 ### 4. 更新伴侣人设
 
-`PUT /api/v1/companions/{id}` — 请求体同创建；只能更新自己创建的伴侣。
+`PUT /api/v1/companions/{id}` — 请求体同创建（字段为 null 表示不改）；只能更新自己创建的伴侣。
 
-### 5. 切换收藏状态
+- 预置伴侣（`isPreset=true`）或他人创建的伴侣 → 400「无权修改该伴侣」；伴侣不存在 → 400「伴侣不存在」。
+- 前端入口：广场页卡片管理菜单「编辑」→ `/create?edit={id}`，`CreatePage` 回填表单后提交本接口。`/settings/{id}` 仍是聊天页的人设设置入口，两者都走同一个 PUT。
+
+### 5. 删除自定义伴侣
+
+`DELETE /api/v1/companions/{id}`（无请求体）
+
+只能删除自己创建的伴侣；预置伴侣（`isPreset=true`）返回 400「预置伴侣不可删除」。
+
+**删除顺序与失败语义**（跨服务无事务，故按「先远端、后本地」排布）：
+
+1. 先调 8002 `GET /api/v1/kb/collections?companionId=...&pageSize=100` 列出该伴侣绑定的知识库
+2. 逐个调 8002 `DELETE /api/v1/kb/collections/{id}`（8002 级联清理文档、切片、Chroma 向量）
+3. 8002 全部成功后，MySQL 本地事务逻辑删 `message` → `conversation` → `user_companion` → `companion`
+
+**8002 不可达 / 返回非 2xx 时整体中断，返回 502**，MySQL 一行不改（fail-fast，无脏数据）；服务恢复后重试即可成功，已删的集合在下次列列表时自然跳过（幂等）。
+
+```json
+// 成功响应
+{ "code": 200, "message": "删除成功", "data": null }
+// 8002 故障
+{ "code": 502, "message": "知识库服务不可用，未执行删除：...", "data": null }
+```
+
+### 6. 切换收藏状态
 
 `PATCH /api/v1/companions/{id}/favorite`（无请求体）
 
@@ -228,7 +252,7 @@ Query 参数（均可选）：`category` 分类、`search` 关键词、`favorite
 { "isFavorite": true }
 ```
 
-### 6. 增加亲密度
+### 7. 增加亲密度
 
 `PATCH /api/v1/companions/{id}/intimacy`
 
@@ -472,8 +496,12 @@ data: {"delta": "", "done": true}
 
 - `GET /api/v1/memory/{user_id}?keyword=xxx` → data `{ "memories": [{ "id", "userId", "type", "keyword", "content", "createdAt" }] }`
 - `POST /api/v1/memory` → 请求 `{ "userId", "memoryType": "fact", "keyword": "可选", "content" }`，data 为单条记忆
+- `PUT /api/v1/memory/{memory_id}` → 请求 `{ "userId", "memoryType?", "keyword?", "content?" }`，字段为 null 表示不改。**userId 必填**用于归属校验；`content` 变了且未显式给 `keyword` 时，keyword 按新内容前 20 字符重建
+- `DELETE /api/v1/memory/{memory_id}?userId=xxx` → data `{ "id": <memory_id> }`
 
 > 数据库未配置时返回 503。查不到数据返回空列表（任务四已清理示例假数据）。
+> **归属校验**：PUT/DELETE 的 userId 与记忆属主不一致时一律返回 **404「记忆不存在」**，不区分「不存在」与「无权」，避免用状态码探测他人记忆是否存在。
+> **向量双写**：POST/PUT/DELETE 都会同步 `backend/chroma_db` 的向量（metadata 带 `memory_id`）。Chroma 失败只打 warning 不改接口结果——事实源是 SQLite，检索层降级不影响 CRUD。PUT 采用「先删旧、无条件写新」的自愈写法，历史无向量的数据编辑一次即补上。
 
 ### 9. 用户心情
 
@@ -485,6 +513,38 @@ data: {"delta": "", "done": true}
 ### 10. 性能指标
 
 `GET /api/v1/metrics` → data `{ "operations": { "chat": { "count", "avg_ms", "min_ms", "max_ms", "p95_ms" } }, "redis_available": true }`
+
+---
+
+## 📝 笔记模块 (Note) — Java 8081
+
+前缀 `/api/v1/notes`，JWT 鉴权（未带 token → 403）。`userId` 一律从 token 主体取，不接受请求体传入。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/notes?companionId=&keyword=&page=1&pageSize=50` | 分页列表，按 `updatedAt` 倒序；`pageSize` 上限 100（超出自动截断） |
+| POST | `/api/v1/notes` | 新增，请求 `{ companionId, content, tags }` |
+| PUT | `/api/v1/notes/{id}` | 更新，字段为 `null` 表示不改；`tags: ""` 表示清空标签 |
+| DELETE | `/api/v1/notes/{id}` | 逻辑删除 |
+
+```json
+// 列表响应 data（**分页对象**，不沿用 GET /conversations 的纯数组遗留口径）
+{ "items": [{ "id": "...", "companionId": "...", "content": "...", "tags": "温柔,治愈",
+              "createdAt": "...", "updatedAt": "..." }],
+  "total": 12, "page": 1, "pageSize": 50 }
+
+// 新增请求（content 必填；tags 为逗号分隔字符串，上限 500 字符）
+{ "companionId": "companion-uuid", "content": "今天聊到的事", "tags": "温柔,治愈" }
+```
+
+**归属与越权**：
+
+- 列表按 `user_id` 过滤，他人笔记不可见
+- 改/删他人笔记 → **400「笔记不存在」**，与「真不存在」同一文案，防探测
+- `companionId` 不存在（或已被逻辑删除）→ 400「伴侣不存在」
+- 预置伴侣**允许**记笔记（用户自己的内容，与「预置伴侣不可编辑」不冲突）
+
+**级联删除**：删除伴侣时，其下笔记与会话/消息/收藏**在同一 MySQL 事务内逻辑删除**。8002 不可达时整条删除 fail-fast（502），笔记不动。
 
 ---
 
