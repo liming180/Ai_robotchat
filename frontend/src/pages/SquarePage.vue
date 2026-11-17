@@ -612,7 +612,7 @@ const confirmDelete = async () => {
 .search-box input { min-width: 0; flex: 1; border: 0; outline: 0; color: #f6f4ef; background: transparent; font-size: 14px; }
 .search-box input::placeholder { color: #777a73; }
 .search-box button { display: grid; padding: 4px; border: 0; place-items: center; color: #8d8f89; background: transparent; cursor: pointer; }
-.search-box kbd { padding: 2px 7px; border: 1px solid rgba(255,255,255,.1); border-radius: 4px; color: #777a73; font: 11px/18px inherit; background: rgba(255,255,255,.035); }
+.search-box kbd { flex: 0 0 auto; padding: 2px 7px; border: 1px solid rgba(255,255,255,.1); border-radius: 4px; color: #9a9c95; font: 11px/18px inherit; background: rgba(255,255,255,.035); }
 
 .category-tabs { display: flex; flex: 0 0 auto; gap: 5px; padding: 4px; border-radius: 7px; background: #1a1d1a; }
 .category-tabs button { min-height: 38px; padding: 0 15px; border: 0; border-radius: 5px; color: #9d9e98; background: transparent; font-size: 13px; cursor: pointer; white-space: nowrap; }

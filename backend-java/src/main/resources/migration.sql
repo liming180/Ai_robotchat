@@ -28,3 +28,14 @@ CREATE TABLE IF NOT EXISTS note (
     KEY idx_note_user_updated (user_id, updated_at),
     KEY idx_note_companion_deleted (companion_id, deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-11-17 任务十二：笔记对齐设计稿
+--   (1) conversation_id：来源会话。非空 = 从对话「存为笔记」，为空 = 手动写的。
+--       以此区分来源，不新增 origin 列。不加外键（与仓库其余表口径一致，靠应用层校验）。
+--   (2) companion_id 去 NOT NULL：手动笔记允许「不关联」。
+--       NoteMapper.logicDeleteByCompanionId 是 WHERE companion_id=#{id}，NULL 天然不匹配，
+--       不关联的笔记不会随任何伴侣删除被误删，行为正确。
+-- ⚠ 若库已升级过，第一条会报 1060（Duplicate column）、第二条可能报 1060/无变化，
+--   用 --force 继续执行即可；见文件头说明。
+ALTER TABLE note ADD COLUMN conversation_id VARCHAR(36) NULL AFTER companion_id;
+ALTER TABLE note MODIFY COLUMN companion_id VARCHAR(36) NULL;

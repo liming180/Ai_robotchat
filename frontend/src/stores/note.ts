@@ -6,15 +6,17 @@ import { javaFetch } from '@/lib/api'
 /**
  * 笔记数据归属 = Java 业务后端（MySQL `note` 表，任务十一）。
  *
- * 历史版本纯 localStorage，且**从未有新增入口**（`addNote` 零调用），
- * 页面永远空状态。本次完整接后端，旧 `ai-notes` 本地数据**不做迁移、直接废弃**
- * （该 key 里极可能一条数据都没有），详见 `docs/任务十一-笔记后端实施方案.md`。
+ * 2026-11-17 任务十二对齐设计稿：
+ * - 新增 `conversationId`（来源会话，非空 = 从对话「存为笔记」），以此区分来源，**不设 origin 列**
+ * - `companionId` 改为可空（手动笔记允许「不关联」）
+ * - 标题不落库，展示层由 `useNoteTitle`（`lib/note.ts`）从正文首行派生
  */
 
 /** Java `GET/POST/PUT /api/v1/notes` 的单条结构。tags 是逗号分隔字符串（P1-4 契约）。 */
 interface NoteDto {
   id: string
-  companionId: string
+  companionId?: string | null
+  conversationId?: string | null
   content?: string | null
   tags?: string | null
   createdAt?: string | null
@@ -26,6 +28,15 @@ interface NoteListDto {
   total: number
   page: number
   pageSize: number
+}
+
+/** 新增笔记的入参。companionId 传空表示「不关联」 */
+export interface AddNoteInput {
+  content: string
+  tags?: string[]
+  companionId?: string
+  /** 从对话存笔记时传当前会话 id，后端会校验归属当前用户 */
+  conversationId?: string
 }
 
 /** 逗号分隔字符串 → 数组，过滤空项（用户可能写 "温柔, ,治愈"） */
@@ -40,7 +51,9 @@ const joinTags = (tags: string[]): string => tags.join(',')
 
 const toNote = (dto: NoteDto): Note => ({
   id: dto.id,
-  companionId: dto.companionId,
+  // 空串归一成 undefined，避免模板里出现「记在 名下」
+  companionId: dto.companionId || undefined,
+  conversationId: dto.conversationId || undefined,
   content: dto.content || '',
   tags: parseTags(dto.tags),
   createdAt: dto.createdAt ? new Date(dto.createdAt) : new Date(),
@@ -76,19 +89,26 @@ export const useNoteStore = defineStore('note', () => {
     }
   }
 
-  /** 新增笔记。companionId 必选（后端会校验伴侣存在）。 */
-  async function addNote(companionId: string, content: string, tags: string[] = []): Promise<Note> {
-    const dto = await javaFetch<NoteDto>('/api/v1/notes', {
-      method: 'POST',
-      body: { companionId, content: content.trim(), tags: joinTags(tags) },
-    })
+  /** 新增笔记。companionId 可空（不关联）；conversationId 非空表示从对话存下来。 */
+  async function addNote(input: AddNoteInput): Promise<Note> {
+    const body: Record<string, unknown> = { content: input.content.trim() }
+    // 空串不传，后端按 null 处理；传空串也能被 hasText 挡掉，但少传更干净
+    if (input.companionId) body.companionId = input.companionId
+    if (input.conversationId) body.conversationId = input.conversationId
+    body.tags = joinTags(input.tags || [])
+
+    const dto = await javaFetch<NoteDto>('/api/v1/notes', { method: 'POST', body })
     const note = toNote(dto)
     // 后端按 updatedAt 倒序返回，本地也插到最前保持一致
     notes.value.unshift(note)
     return note
   }
 
-  /** 更新笔记。只传需要改的字段，null 表示不改。 */
+  /**
+   * 更新笔记。只传需要改的字段，null 表示不改。
+   *
+   * companionId 的语义：`undefined` = 不修改，空串 = 解除关联（后端把列置 NULL）。
+   */
   async function updateNote(
     noteId: string,
     patch: { content?: string; tags?: string[]; companionId?: string },

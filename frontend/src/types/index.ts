@@ -41,7 +41,10 @@ export interface Conversation {
 
 export interface Note {
   id: string
-  companionId: string
+  /** 可为空：手动写的笔记允许「不关联」任何伴侣 */
+  companionId?: string
+  /** 来源会话：非空 = 从对话「存为笔记」，为空 = 手动写的（以此区分来源，无 origin 字段） */
+  conversationId?: string
   content: string
   tags: string[]
   createdAt: Date

@@ -1,257 +1,459 @@
 <template>
-  <div class="profile-page">
-    <header class="topbar">
-      <button class="brand" type="button" @click="router.push('/')" aria-label="返回首页">
-        <span class="brand-mark"><Heart :size="19" fill="currentColor" /></span>
-        <span>AI 伴侣</span>
-      </button>
+  <div class="profile">
+    <Navbar />
 
-      <div class="topbar-actions">
-        <button class="icon-button" type="button" title="聊天记录" aria-label="聊天记录" @click="router.push('/history')">
-          <MessagesSquare :size="20" />
-        </button>
-        <button class="profile-button" type="button" @click="router.push('/profile')">
-          <span class="profile-avatar"><UserRound :size="18" /></span>
-          <span class="profile-label">我的空间</span>
-        </button>
-      </div>
-    </header>
+    <main class="profile-main">
+      <!-- 页头 -->
+      <header class="page-head">
+        <p class="eyebrow">
+          <Sparkles :size="15" />
+          PERSONAL SPACE
+        </p>
 
-    <main class="page-content">
-      <section class="intro" aria-labelledby="profile-title">
-        <div>
-          <p class="eyebrow"><Sparkles :size="15" /> PERSONAL SPACE</p>
-          <h1 id="profile-title">我的空间</h1>
-          <p class="intro-copy">在这里查看你的 AI 伴侣、对话记录和收藏的伙伴。</p>
-        </div>
-      </section>
-
-      <!-- 统计数据 -->
-      <section class="stats-section">
-        <div class="stat-cards">
-          <div class="stat-card">
-            <div class="stat-value">{{ companionStore.allCompanions.length }}</div>
-            <div class="stat-label">AI 伴侣</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ chatStore.conversations.length }}</div>
-            <div class="stat-label">对话</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ companionStore.favoriteCompanions.length }}</div>
-            <div class="stat-label">收藏</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="menu-section">
-        <div class="menu-grid">
-          <button @click="$router.push('/history')" class="menu-item">
-            <div class="menu-icon">
-              <MessagesSquare :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>聊天历史</h3>
-              <p>查看历史对话</p>
-            </div>
-          </button>
-
-          <button @click="$router.push('/')" class="menu-item">
-            <div class="menu-icon">
-              <Heart :size="20" fill="currentColor" />
-            </div>
-            <div class="menu-content">
-              <h3>我的收藏</h3>
-              <p>管理收藏的伴侣</p>
-            </div>
-          </button>
-
-          <button @click="$router.push('/create')" class="menu-item">
-            <div class="menu-icon">
-              <Plus :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>创建伴侣</h3>
-              <p>自定义专属 AI</p>
-            </div>
-          </button>
-
-          <button @click="$router.push('/memory')" class="menu-item">
-            <div class="menu-icon">
-              <Brain :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>记忆管理</h3>
-              <p>AI 记住的关于你的事</p>
-            </div>
-          </button>
-
-          <button @click="$router.push('/calendar')" class="menu-item">
-            <div class="menu-icon">
-              <CalendarHeart :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>情绪日历</h3>
-              <p>查看心情变化轨迹</p>
-            </div>
-          </button>
-
-          <button @click="$router.push('/notes')" class="menu-item">
-            <div class="menu-icon">
-              <NotebookPen :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>随笔笔记</h3>
-              <p>收藏 AI 生成的内容</p>
-            </div>
-          </button>
-
-          <button @click="showSettings = true" class="menu-item">
-            <div class="menu-icon">
-              <Settings :size="20" />
-            </div>
-            <div class="menu-content">
-              <h3>设置</h3>
-              <p>通用设置</p>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      <section class="favorites-section">
-        <div class="section-heading">
+        <div class="page-head__row">
           <div>
-            <p class="section-kicker">常伴左右</p>
-            <h2>我的收藏</h2>
+            <h1 class="page-title">我的空间</h1>
+
+            <div class="account">
+              <button
+                type="button"
+                class="account__avatar"
+                aria-label="更换头像"
+                @click="openEditProfile"
+              >
+                <AvatarImage
+                  :src="userStore.user?.avatar"
+                  :name="userStore.user?.name"
+                  :seed="userStore.user?.id || 'self'"
+                  size="xl"
+                />
+                <span class="account__avatar-mask">
+                  <Camera :size="16" />
+                </span>
+              </button>
+
+              <div class="account__copy">
+                <p class="account__name">
+                  {{ userStore.user?.name || '我的账号' }}
+                  <button type="button" class="account__edit" @click="openEditProfile">
+                    <Pencil :size="13" />
+                    编辑
+                  </button>
+                </p>
+                <p class="account__meta">{{ userStore.user?.email || '未登录' }}</p>
+              </div>
+            </div>
           </div>
-          <span>{{ favoriteCompanions.length }} 位伙伴</span>
+
+          <button type="button" class="btn btn-ghost" @click="handleLogout">
+            <LogOut :size="16" />
+            退出登录
+          </button>
+        </div>
+      </header>
+
+      <!-- 数字 -->
+      <div class="stats">
+        <div class="stat">
+          <span>AI 伴侣</span>
+          <strong><AnimatedNumber :value="companionStore.allCompanions.length" /></strong>
+        </div>
+        <div class="stat">
+          <span>会话</span>
+          <strong><AnimatedNumber :value="chatStore.conversations.length" /></strong>
+        </div>
+        <div class="stat">
+          <span>收藏</span>
+          <strong><AnimatedNumber :value="favoriteCompanions.length" /></strong>
+        </div>
+        <div class="stat">
+          <span>累计对话</span>
+          <strong>
+            <AnimatedNumber :value="totalMessages" /><i>条</i>
+          </strong>
+        </div>
+      </div>
+
+      <div class="profile-grid">
+        <!-- ===== 左：功能列表 ===== -->
+        <div class="menu-list">
+          <router-link class="menu-item" to="/history">
+            <span class="menu-item__ico"><MessagesSquare :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>聊天记录</b>
+              <small>按时间倒序，接着上次继续</small>
+            </span>
+            <span class="menu-item__num">{{ chatStore.conversations.length }}</span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
+
+          <router-link class="menu-item" to="/memory">
+            <span class="menu-item__ico"><Brain :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>记忆管理</b>
+              <small>它记住的关于你的事，可改可删</small>
+            </span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
+
+          <router-link class="menu-item" to="/calendar">
+            <span class="menu-item__ico"><CalendarHeart :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>情绪日历</b>
+              <small>查看心情变化轨迹</small>
+            </span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
+
+          <router-link class="menu-item" to="/notes">
+            <span class="menu-item__ico"><NotebookPen :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>随笔笔记</b>
+              <small>AI 生成的故事和你自己写的，都在这里</small>
+            </span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
+
+          <router-link class="menu-item" to="/square">
+            <span class="menu-item__ico"><Heart :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>我的收藏</b>
+              <small>
+                {{ favoriteCompanions.length ? favoriteCompanions.map((c) => c.name).join('、') : '还没有收藏' }}
+              </small>
+            </span>
+            <span class="menu-item__num">{{ favoriteCompanions.length }}</span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
+
+          <router-link class="menu-item" to="/create">
+            <span class="menu-item__ico"><Plus :size="16" /></span>
+            <span class="menu-item__copy">
+              <b>创建伴侣</b>
+              <small>名字、头像、性格、知识库，全都自己定</small>
+            </span>
+            <ArrowRight :size="16" class="menu-item__chev" />
+          </router-link>
         </div>
 
-        <div v-if="favoriteCompanions.length" class="favorite-grid">
-          <article
-            v-for="(companion, index) in favoriteCompanions"
-            :key="companion.id"
-            class="favorite-card"
-            :class="`tone-${index % 3}`"
-            tabindex="0"
-            @click="startChat(companion.id)"
-            @keydown.enter="startChat(companion.id)"
-          >
-            <div class="favorite-visual">
-              <img
-                :src="companion.avatar"
-                :alt="companion.name"
-                :data-seed="companion.id"
-                :data-label="companion.name"
-                @error="handleCompanionAvatarError"
-              />
-              <span class="online-dot" title="随时可以聊天"></span>
-            </div>
-            <div class="favorite-content">
-              <div class="favorite-meta">
-                <span>{{ companion.category }}</span>
-                <button
-                  type="button"
-                  title="取消收藏"
-                  aria-label="取消收藏"
-                  @click.stop="toggleFavorite(companion.id)"
-                >
-                  <Heart :size="18" fill="currentColor" />
-                </button>
-              </div>
-              <h3>{{ companion.name }}</h3>
-              <p>{{ companion.description }}</p>
-              <div class="favorite-footer">
-                <div class="intimacy">
-                  <span>默契值 {{ companion.intimacy }}%</span>
-                  <div><i :style="{ width: `${Math.max(companion.intimacy, 6)}%` }"></i></div>
-                </div>
-                <span class="chat-arrow"><ArrowUpRight :size="19" /></span>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
+        <!-- ===== 右：收藏 + 数据 ===== -->
+        <aside class="profile-aside">
+          <section class="side-card">
+            <h2>收藏的伙伴</h2>
 
-      <!-- 设置弹窗 -->
-      <div v-if="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-6">
-        <div class="absolute inset-0 bg-black/60" @click="showSettings = false"></div>
-        <div class="relative bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl">
-          <h3 class="text-xl font-bold text-white mb-6">设置</h3>
-          <div class="space-y-4">
-            <button
-              @click="clearLocalCache" class="w-full p-4 border border-amber-500/50 text-amber-400 rounded-xl hover:bg-amber-500/10 transition-colors flex items-center justify-center gap-3">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-              </svg>
-              清除本地缓存
-            </button>
-            <p class="text-xs text-slate-500 leading-relaxed">
-              仅清除本机浏览器里的副本缓存，<strong class="text-slate-400">不会删除账号里的任何数据</strong>（伴侣、对话、记忆、情绪都保留在服务器），也不会退出登录。清除后页面会重新从服务器拉取最新内容。
+            <div v-if="favoriteCompanions.length" class="fav-list">
+              <button
+                v-for="companion in favoriteCompanions"
+                :key="companion.id"
+                type="button"
+                class="fav-row"
+                @click="startChat(companion.id)"
+              >
+                <AvatarImage
+                  :src="companion.avatar"
+                  :name="companion.name"
+                  :seed="companion.id"
+                  size="sm"
+                />
+                <span class="fav-row__copy">
+                  <span class="fav-row__name">{{ companion.name }}</span>
+                  <span class="fav-row__meta">默契 {{ companion.intimacy }}%</span>
+                </span>
+                <ArrowUpRight :size="14" class="fav-row__go" />
+              </button>
+            </div>
+
+            <p v-else class="side-empty">还没有收藏。去广场挑一个吧。</p>
+
+            <router-link class="side-more" to="/square">
+              去广场挑一个
+              <ArrowRight :size="14" />
+            </router-link>
+          </section>
+
+          <section class="side-card">
+            <h2>偏好设置</h2>
+
+            <div class="setting">
+              <div class="setting__copy">
+                <b>知识库增强</b>
+                <small>新对话默认打开 RAG</small>
+              </div>
+              <ToggleSwitch v-model="prefs.rag" size="sm" label="知识库增强" />
+            </div>
+
+            <div class="setting">
+              <div class="setting__copy">
+                <b>自动记忆</b>
+                <small>从对话里自动提取值得记的事</small>
+              </div>
+              <ToggleSwitch v-model="prefs.memory" size="sm" label="自动记忆" />
+            </div>
+
+            <div class="setting">
+              <div class="setting__copy">
+                <b>情绪感知</b>
+                <small>回复时参考你的情绪记录</small>
+              </div>
+              <ToggleSwitch v-model="prefs.emotion" size="sm" label="情绪感知" />
+            </div>
+
+            <p class="setting-note">
+              开关只作用于本机，暂未同步到服务端。
             </p>
-            <button
-              @click="showSettings = false" class="w-full p-4 bg-white/5 border border-white/10 text-slate-300 rounded-xl hover:bg-white/10 transition-colors"
-            >
-              关闭
-            </button>
-          </div>
-        </div>
+          </section>
+
+          <section class="side-card">
+            <h2>数据</h2>
+
+            <div class="data-links">
+              <button type="button" class="data-link" @click="clearLocalCache">
+                <Eraser :size="15" />
+                清除本地缓存
+              </button>
+              <button type="button" class="data-link data-link--danger" @click="handleLogout">
+                <LogOut :size="15" />
+                退出登录
+              </button>
+            </div>
+
+            <p class="setting-note">
+              清除缓存只清本机副本，不会删除账号里的数据，也不会退出登录。
+            </p>
+          </section>
+        </aside>
       </div>
     </main>
+
+    <!-- ===== 编辑资料对话框 ===== -->
+    <ModalDialog
+      v-model="showEditProfile"
+      title="编辑个人资料"
+      description="昵称与头像会显示在顶栏、侧栏和聊天页。"
+      :width="460"
+      :close-on-backdrop="!savingProfile"
+      :close-on-esc="!savingProfile"
+      @close="resetEditForm"
+    >
+      <div class="edit-avatar">
+        <AvatarImage
+          :src="draftAvatar || userStore.user?.avatar"
+          :name="draftName || userStore.user?.name"
+          :seed="userStore.user?.id || 'self'"
+          size="xl"
+        />
+
+        <div class="edit-avatar__actions">
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/*"
+            class="hidden-input"
+            @change="handleAvatarPick"
+          />
+
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            :disabled="uploadingAvatar"
+            @click="avatarInputRef?.click()"
+          >
+            <ImagePlus :size="15" />
+            {{ uploadingAvatar ? '上传中…' : '上传图片' }}
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-quiet btn-sm"
+            :disabled="!draftAvatar"
+            @click="draftAvatar = ''"
+          >
+            恢复默认
+          </button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>昵称</span>
+        <input
+          v-model="draftName"
+          class="input"
+          type="text"
+          placeholder="怎么称呼你"
+          maxlength="20"
+          @keydown.enter.prevent="saveProfile"
+        />
+        <small>{{ draftName.trim().length }} / 20</small>
+      </label>
+
+      <label class="field">
+        <span>邮箱</span>
+        <input class="input" type="email" :value="userStore.user?.email || ''" disabled />
+        <small>邮箱是登录凭据，暂不支持修改</small>
+      </label>
+
+      <p v-if="profileError" class="form-error" role="alert">{{ profileError }}</p>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" :disabled="savingProfile" @click="showEditProfile = false">
+          取消
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="!canSaveProfile"
+          @click="saveProfile"
+        >
+          {{ savingProfile ? '保存中…' : '保存' }}
+        </button>
+      </template>
+    </ModalDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  ArrowRight,
   ArrowUpRight,
   Brain,
   CalendarHeart,
+  Camera,
+  Eraser,
   Heart,
+  ImagePlus,
+  LogOut,
+  Pencil,
   MessagesSquare,
   NotebookPen,
   Plus,
   Sparkles,
-  Settings,
-  UserRound,
 } from 'lucide-vue-next'
+import Navbar from '@/components/Navbar.vue'
+import AnimatedNumber from '@/components/ui/AnimatedNumber.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import AvatarImage from '@/components/ui/AvatarImage.vue'
+import ModalDialog from '@/components/ui/ModalDialog.vue'
+import { useToast } from '@/composables/useToast'
 import { useCompanionStore } from '@/stores/companion'
 import { useChatStore } from '@/stores/chat'
-import { createSvgAvatarDataUrl } from '@/lib/avatar'
-import { clearBusinessCache } from '@/lib/api'
+import { useUserStore } from '@/stores/user'
+import { clearBusinessCache, uploadImage } from '@/lib/api'
+import { compressImage } from '@/lib/image'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
 const chatStore = useChatStore()
+const userStore = useUserStore()
+const toast = useToast()
 
-const showSettings = ref(false)
+/** 本机偏好开关（暂存内存，刷新回到默认开） */
+const prefs = reactive({
+  rag: true,
+  memory: true,
+  emotion: true,
+})
+
 const favoriteCompanions = computed(() => companionStore.favoriteCompanions)
+
+/** 头像首字兜底已收进 AvatarImage 组件，此处不再需要 */
+
+// ── 编辑个人资料 ──
+const showEditProfile = ref(false)
+const avatarInputRef = ref<HTMLInputElement | null>(null)
+const draftName = ref('')
+/** 新头像地址（已上传到服务器的 URL）；空字符串表示用默认兜底 */
+const draftAvatar = ref('')
+const uploadingAvatar = ref(false)
+const savingProfile = ref(false)
+const profileError = ref('')
+
+const openEditProfile = () => {
+  draftName.value = userStore.user?.name || ''
+  draftAvatar.value = userStore.user?.avatar || ''
+  profileError.value = ''
+  showEditProfile.value = true
+}
+
+const resetEditForm = () => {
+  if (savingProfile.value) return
+  profileError.value = ''
+  uploadingAvatar.value = false
+}
+
+const canSaveProfile = computed(() => {
+  if (savingProfile.value || uploadingAvatar.value) return false
+  return draftName.value.trim().length > 0
+})
+
+/** 选图 → 压缩 → 上传到 Java，拿到 URL 后暂存在 draftAvatar，保存时再落库 */
+const handleAvatarPick = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    profileError.value = '请选择图片文件'
+    return
+  }
+
+  uploadingAvatar.value = true
+  profileError.value = ''
+
+  try {
+    // 头像压缩到 512px 就够：显示最大是 92px，2x 足够，还能省一半流量
+    const dataUrl = await compressImage(file, 512, 0.9)
+    draftAvatar.value = await uploadImage(dataUrl)
+  } catch (err) {
+    profileError.value = `头像上传失败：${(err as Error).message}`
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
+
+const saveProfile = async () => {
+  if (!canSaveProfile.value) return
+
+  savingProfile.value = true
+  profileError.value = ''
+
+  try {
+    await userStore.updateProfile({
+      name: draftName.value.trim(),
+      avatar: draftAvatar.value,
+    })
+    showEditProfile.value = false
+    toast.success('个人资料已更新')
+  } catch (err) {
+    profileError.value = `保存失败：${(err as Error).message}`
+    toast.error('保存失败，请重试')
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+/** 累计对话：所有会话的消息总数 */
+const totalMessages = computed(() =>
+  chatStore.conversations.reduce((sum, conv) => sum + conv.messages.length, 0),
+)
 
 onMounted(() => {
   companionStore.loadCompanions()
   chatStore.loadConversations()
 })
 
+/** 头像色调已收进 AvatarImage 组件，此处不再需要 */
+
 const startChat = (companionId: string) => {
   router.push(`/chat/${companionId}`)
 }
 
-const toggleFavorite = async (id: string) => {
-  try {
-    await companionStore.toggleFavorite(id)
-  } catch (e) {
-    companionStore.error = `收藏操作失败：${(e as Error).message}`
-  }
-}
-
-const handleCompanionAvatarError = (e: Event) => {
-  const img = e.target as HTMLImageElement
-  if (!img) return
-  const seed = img.dataset.seed || String(Date.now())
-  const name = img.dataset.label || 'AI'
-  const label = name.trim().slice(-1) || 'AI'
-  img.src = createSvgAvatarDataUrl({ seed, label })
+const handleLogout = () => {
+  userStore.logout()
+  toast.success('已退出登录')
+  router.push('/login')
 }
 
 /**
@@ -259,534 +461,603 @@ const handleCompanionAvatarError = (e: Event) => {
  *
  * 只清业务缓存 key（会话/情绪/记忆/笔记等前端副本），**保留 token 与主题偏好**：
  * 用户清完仍是登录状态，刷新后各页面会重新从服务器拉取。
- *
- * 历史版本这里叫「清除所有数据」，文案宣称会删除对话和伴侣，实际只执行
- * `localStorage.clear()` + 刷新——后端一条没删却把人踢下线，属于误导性假功能。
  */
 const clearLocalCache = () => {
-  if (!confirm('清除本地缓存？\n\n这只清除本机浏览器里的副本，不会删除账号里的任何数据，也不会退出登录。')) {
+  if (
+    !confirm(
+      '清除本地缓存？\n\n这只清除本机浏览器里的副本，不会删除账号里的任何数据，也不会退出登录。',
+    )
+  ) {
     return
   }
   clearBusinessCache()
-  alert('本地缓存已清除，页面将重新加载最新数据。')
-  location.reload()
+  toast.success('本地缓存已清除，正在重新加载')
+  setTimeout(() => location.reload(), 600)
 }
 </script>
 
 <style scoped>
-.profile-page {
+.profile {
   min-height: 100vh;
-  color: #f6f4ef;
-  background:
-    radial-gradient(circle at 13% 8%, rgba(45, 212, 191, 0.07), transparent 26rem),
-    radial-gradient(circle at 88% 24%, rgba(251, 113, 133, 0.07), transparent 28rem),
-    #111311;
 }
 
-.topbar {
-  position: sticky;
-  z-index: 20;
-  top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 72px;
-  padding: 0 max(24px, calc((100vw - 1240px) / 2));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(17, 19, 17, 0.88);
-  backdrop-filter: blur(18px);
-}
-
-.brand,
-.profile-button,
-.icon-button,
-.favorite-button,
-.favorite-meta button {
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 0;
-  color: #fffaf2;
-  font-size: 17px;
-  font-weight: 720;
-}
-
-.brand-mark {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 50%;
-  color: #17120f;
-  background: #ff8b72;
-  box-shadow: 0 8px 24px rgba(255, 139, 114, 0.22);
-}
-
-.topbar-actions,
-.profile-button {
-  display: flex;
-  align-items: center;
-}
-
-.topbar-actions { gap: 8px; }
-
-.icon-button {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 50%;
-  color: #aaa9a2;
-}
-
-.icon-button:hover { color: white; background: rgba(255, 255, 255, 0.07); }
-
-.profile-button {
-  gap: 9px;
-  padding: 5px 12px 5px 5px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  color: #dbd8d0;
-}
-
-.profile-button:hover { border-color: rgba(255, 139, 114, 0.45); }
-.profile-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #282b27; }
-.profile-label { font-size: 13px; }
-
-.page-content {
-  width: min(1240px, calc(100% - 48px));
+.profile-main {
+  width: min(1100px, calc(100% - var(--gutter) * 2));
   margin: 0 auto;
-  padding: 72px 0 96px;
+  padding: var(--sp-14) 0 var(--sp-24);
 }
 
-.intro {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 48px;
-  padding-bottom: 38px;
-}
-
-.eyebrow,
-.section-kicker {
+/* ---------- 页头 ---------- */
+.eyebrow {
   display: flex;
   align-items: center;
   gap: 7px;
   margin: 0 0 13px;
-  color: #65d8c5;
-  font-size: 11px;
+  color: var(--accent);
+  font-size: var(--fs-12);
   font-weight: 750;
-  letter-spacing: 0;
 }
 
-.intro h1 {
-  max-width: 760px;
-  margin: 0;
-  color: #fffaf2;
-  font-size: clamp(40px, 5.2vw, 68px);
-  font-weight: 760;
-  line-height: 1.08;
-  letter-spacing: 0;
+.page-head {
+  padding-bottom: var(--sp-6);
 }
 
-.intro-copy {
-  max-width: 610px;
-  margin: 20px 0 0;
-  color: #aaa9a2;
-  font-size: 16px;
-  line-height: 1.8;
-}
-
-.stats-section {
-  padding-top: 54px;
-}
-
-.stat-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.stat-card {
+.page-head__row {
   display: flex;
-  min-height: 140px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: #1a1d1a;
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-8);
 }
 
-.stat-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(101, 216, 197, 0.36);
-  background: #1e211e;
-}
-
-.stat-value {
-  font-size: 48px;
+.page-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: clamp(30px, 4vw, var(--fs-34));
   font-weight: 760;
-  background: linear-gradient(135deg, #ff8b72 0%, #65d8c5 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  line-height: var(--lh-tight);
 }
 
-.stat-label {
-  margin-top: 8px;
-  color: #777a73;
-  font-size: 13px;
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
 }
 
-.menu-section {
-  padding-top: 54px;
+.account__copy {
+  min-width: 0;
 }
 
-.menu-grid {
+.account__name {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--fs-19);
+  font-weight: 720;
+}
+
+.account__meta {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.account__avatar {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* 悬停时压一层半透明遮罩 + 相机图标，提示「可以换」 */
+.account__avatar-mask {
+  position: absolute;
+  inset: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(9, 11, 9, 0.6);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.account__avatar:hover .account__avatar-mask,
+.account__avatar:focus-visible .account__avatar-mask {
+  opacity: 1;
+}
+
+.account__name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.account__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.account__edit:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 编辑资料对话框 ---------- */
+.edit-avatar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-5);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.edit-avatar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: var(--fs-12);
+}
+
+.btn-quiet {
+  color: var(--muted);
+  background: transparent;
+}
+
+.btn-quiet:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-quiet:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.field {
+  display: block;
+}
+
+.field + .field {
+  margin-top: var(--sp-4);
+}
+
+.field > span {
+  display: block;
+  margin-bottom: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 650;
+}
+
+.field > small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--fs-14);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--muted-faint);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--ring-accent);
+}
+
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: var(--sp-4);
+  padding: 10px 12px;
+  border: 1px solid var(--primary-line);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--primary-hover);
+  font-size: var(--fs-13);
+}
+
+/* ---------- 数字条 ---------- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.stat {
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) 0;
+  border-right: 1px solid var(--line);
+}
+
+.stat:last-child {
+  border-right: 0;
+}
+
+.stat span {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.stat strong {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-top: 6px;
+  color: var(--text-strong);
+  font-size: var(--fs-28);
+  font-weight: 760;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat strong i {
+  font-style: normal;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  font-weight: 400;
+}
+
+/* ---------- 布局 ---------- */
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-8);
+  align-items: start;
+  padding-top: var(--sp-8);
+}
+
+/* ---------- 功能列表 ---------- */
+.menu-list {
+  border-top: 1px solid var(--line);
 }
 
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: #1a1d1a;
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--line);
+  transition: padding-left var(--dur) var(--ease);
 }
 
 .menu-item:hover {
-  transform: translateY(-3px);
-  border-color: rgba(255, 139, 114, 0.45);
-  background: #1e211e;
+  padding-left: 4px;
 }
 
-.menu-icon {
+.menu-item__ico {
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 12px;
-  color: #ff8b72;
-  background: rgba(255, 139, 114, 0.12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: var(--bg-soft);
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
-.menu-content {
+.menu-item:hover .menu-item__ico {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.menu-item__copy {
+  min-width: 0;
   flex: 1;
-  min-width: 0;
 }
 
-.menu-content h3 {
-  margin: 0 0 4px;
-  color: #fffaf2;
-  font-size: 18px;
-  font-weight: 600;
+.menu-item__copy b {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-14);
+  font-weight: 500;
 }
 
-.menu-content p {
-  margin: 0;
-  color: #9b9d96;
-  font-size: 13px;
-}
-
-.favorites-section {
-  padding-top: 54px;
-}
-
-.section-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.section-heading h2 {
-  margin: 0;
-  color: #f7f5ee;
-  font-size: 25px;
-  line-height: 1.2;
-}
-
-.section-heading .section-kicker {
-  margin-bottom: 7px;
-  color: #ff9b84;
-}
-
-.section-heading > span {
-  color: #777a73;
-  font-size: 13px;
-}
-
-.favorite-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.favorite-card {
-  display: grid;
-  min-height: 240px;
-  grid-template-columns: 176px 1fr;
+.menu-item__copy small {
+  display: block;
+  margin-top: 2px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: #1b1e1b;
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.favorite-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(255, 255, 255, 0.22);
-  background: #20231f;
+.menu-item__num {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
 }
 
-.favorite-visual {
-  position: relative;
-  display: grid;
-  min-height: 240px;
-  place-items: center;
-  background: #355f58;
+.menu-item__chev {
+  flex-shrink: 0;
+  color: var(--muted-faint);
+  transition:
+    transform var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
-.tone-1 .favorite-visual {
-  background: #6c4e58;
+.menu-item:hover .menu-item__chev {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
-.tone-2 .favorite-visual {
-  background: #756536;
+/* ---------- 右栏 ---------- */
+.side-card {
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
 }
 
-.favorite-visual::after {
-  position: absolute;
-  inset: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 50%;
-  content: '';
+.side-card + .side-card {
+  margin-top: var(--sp-3);
 }
 
-.favorite-visual img {
-  position: relative;
-  z-index: 1;
-  width: 112px;
-  height: 112px;
-  border: 6px solid rgba(255, 255, 255, 0.16);
-  border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+.side-card h2 {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-strong);
+  font-size: var(--fs-13);
+  font-weight: 650;
 }
 
-.online-dot {
-  position: absolute;
-  z-index: 2;
-  right: 42px;
-  bottom: 63px;
-  width: 13px;
-  height: 13px;
-  border: 3px solid #355f58;
-  border-radius: 50%;
-  background: #83e8b0;
-}
-
-.tone-1 .online-dot {
-  border-color: #6c4e58;
-}
-
-.tone-2 .online-dot {
-  border-color: #756536;
-}
-
-.favorite-content {
+/* 收藏 */
+.fav-list {
   display: flex;
-  min-width: 0;
   flex-direction: column;
-  padding: 24px;
 }
 
-.favorite-meta {
+.fav-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fav-row:last-of-type {
+  border-bottom: 0;
+}
+
+.fav-row__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.fav-row__name {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+
+.fav-row__meta {
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.fav-row__go {
+  flex-shrink: 0;
+  color: var(--muted-faint);
+  transition: color var(--dur) var(--ease);
+}
+
+.fav-row:hover .fav-row__go {
+  color: var(--accent);
+}
+
+.side-empty {
+  margin: 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-13);
+}
+
+.side-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  margin-top: var(--sp-3);
+  color: var(--accent);
+  font-size: var(--fs-13);
+}
+
+.side-more:hover {
+  text-decoration: underline;
+}
+
+/* 设置 */
+.setting {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #94968f;
-  font-size: 12px;
+  gap: var(--sp-3);
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.favorite-meta button {
-  display: grid;
-  padding: 4px;
-  place-items: center;
-  color: #ff8b72;
+.setting:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
-.favorite-content h3 {
-  margin: 18px 0 8px;
-  color: #fffaf2;
-  font-size: 27px;
+.setting__copy {
+  min-width: 0;
 }
 
-.favorite-content > p {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 0;
-  color: #aaa9a2;
-  font-size: 13px;
-  line-height: 1.7;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.favorite-footer {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: auto;
-  padding-top: 20px;
-}
-
-.intimacy {
-  flex: 1;
-  color: #858881;
-  font-size: 11px;
-}
-
-.intimacy > div {
-  height: 3px;
-  margin-top: 7px;
-  overflow: hidden;
-  background: #343832;
-}
-
-.intimacy i {
+.setting__copy b {
   display: block;
-  height: 100%;
-  background: #65d8c5;
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
 }
 
-.chat-arrow {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  color: #1b1e1b;
-  background: #e8e5dc;
+.setting__copy small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
 }
 
-@media (max-width: 960px) {
-  .page-content {
-    width: min(100% - 36px, 760px);
-    padding-top: 52px;
-  }
-
-  .intro {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 28px;
-  }
-
-  .stat-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .menu-grid,
-  .favorite-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.setting-note {
+  margin: var(--sp-4) 0 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  line-height: 1.7;
 }
 
-@media (max-width: 640px) {
-  .topbar {
-    height: 64px;
-    padding: 0 16px;
-  }
+/* 数据 */
+.data-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
 
-  .profile-label,
-  .search-box kbd {
-    display: none;
-  }
+.data-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--fs-13);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
 
-  .profile-button {
-    padding-right: 5px;
-  }
+.data-link:hover {
+  color: var(--text);
+}
 
-  .page-content {
-    width: calc(100% - 28px);
-    padding: 40px 0 64px;
-  }
+.data-link--danger {
+  color: var(--primary);
+}
 
-  .intro {
-    padding-bottom: 30px;
-  }
+.data-link--danger:hover {
+  color: var(--primary-hover);
+}
 
-  .intro h1 {
-    font-size: 40px;
-  }
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: var(--fs-13);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
 
-  .intro-copy {
-    margin-top: 15px;
-    font-size: 14px;
-  }
+.btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  background: transparent;
+}
 
-  .stats-section,
-  .menu-section,
-  .favorites-section {
-    padding-top: 42px;
-  }
+.btn-ghost:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
 
-  .stat-cards,
-  .menu-grid,
-  .favorite-grid {
+/* ---------- 响应式 ---------- */
+@media (max-width: 1024px) {
+  .profile-grid {
     grid-template-columns: 1fr;
   }
 
-  .favorite-card {
-    min-height: 220px;
-    grid-template-columns: 118px 1fr;
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .favorite-visual {
-    min-height: 220px;
+  .stat:nth-child(2) {
+    border-right: 0;
   }
 
-  .favorite-visual img {
-    width: 82px;
-    height: 82px;
+  .stat:nth-child(1),
+  .stat:nth-child(2) {
+    border-bottom: 1px solid var(--line);
   }
 
-  .favorite-visual::after {
-    inset: 10px;
+  .page-head__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-4);
+  }
+}
+
+@media (max-width: 760px) {
+  .profile-main {
+    padding: var(--sp-10) 0 var(--sp-16);
   }
 
-  .online-dot {
-    right: 25px;
-    bottom: 64px;
-  }
-
-  .favorite-content {
-    padding: 20px 16px;
-  }
-
-  .favorite-content h3 {
-    margin-top: 13px;
-    font-size: 23px;
+  .account {
+    flex-wrap: wrap;
   }
 }
 </style>

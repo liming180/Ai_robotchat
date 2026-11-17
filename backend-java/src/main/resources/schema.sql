@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS message (
 CREATE TABLE IF NOT EXISTS note (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
-    companion_id VARCHAR(36) NOT NULL,
+    -- 可空：手动写的笔记允许「不关联」某个伴侣
+    companion_id VARCHAR(36) NULL,
+    -- 来源会话：非空 = 从对话「存为笔记」，为空 = 手动写的（以此区分来源，不设 origin 列）
+    conversation_id VARCHAR(36) NULL,
     content TEXT NOT NULL,
     -- 逗号分隔，与 companion.tags 同一口径（P1-4：不展开为数组、不建标签表）
     tags VARCHAR(500),

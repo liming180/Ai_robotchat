@@ -7,9 +7,17 @@ import lombok.Data;
 @Data
 public class CreateNoteRequest {
 
-    /** 记在哪个伴侣名下。必须是存在的伴侣（含预置），否则 400「伴侣不存在」。 */
-    @NotBlank(message = "伴侣 ID 不能为空")
+    /**
+     * 记在哪个伴侣名下；<b>可空</b>——手动写的笔记允许「不关联」。
+     * 非空时必须是存在的伴侣（含预置），否则 400「伴侣不存在」。
+     */
     private String companionId;
+
+    /**
+     * 来源会话 id；可空。非空表示从对话「存为笔记」，
+     * 服务端会校验该会话属于当前用户（防越权）。
+     */
+    private String conversationId;
 
     @NotBlank(message = "笔记内容不能为空")
     private String content;

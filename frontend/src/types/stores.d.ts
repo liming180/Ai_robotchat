@@ -15,7 +15,13 @@ declare module '@/stores/note' {
     allTags: string[]
     /** 拉取列表；companionId 传空表示全部伴侣 */
     loadNotes: (companionId?: string) => Promise<void>
-    addNote: (companionId: string, content: string, tags: string[]) => Promise<any>
+    /** 新增笔记；companionId 可空（不关联），conversationId 非空表示从对话存下来 */
+    addNote: (input: {
+      content: string
+      tags?: string[]
+      companionId?: string
+      conversationId?: string
+    }) => Promise<any>
     deleteNote: (noteId: string) => Promise<void>
     updateNote: (
       noteId: string,

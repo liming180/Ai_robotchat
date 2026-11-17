@@ -1,0 +1,122 @@
+/* ==========================================================================
+   AI 伴侣 · 设计变量
+   来源：SquarePage.vue / CreatePage.vue / ProfilePage.vue 的实际 scoped 样式。
+   这三页是项目里已经成型的视觉语言，其他页面统一往这套上收。
+
+   配色：暗色暖调底 + 珊瑚橘主色 + 青绿点缀 + 米白文字
+   形状：7–8px 小圆角（不是大圆角）
+   ========================================================================== */
+
+:root {
+  /* ---- 底色（三层，靠明度分层，不靠阴影） ---- */
+  --bg: #111311;
+  --bg-soft: #1a1d1a;
+  --bg-raise: #1e211e;
+  --bg-hover: #23271f;
+
+  /* ---- 文字 ---- */
+  --text: #f6f4ef;
+  --text-strong: #fffaf2;
+  --muted: #aaa9a2;
+  --muted-dim: #9a9c95;
+  --muted-faint: #8d8f89;
+
+  /* ---- 分隔线 ---- */
+  --line: rgba(255, 255, 255, 0.09);
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.22);
+
+  /* ---- 主色：珊瑚橘 ---- */
+  --primary: #ff8b72;
+  --primary-hover: #ffa08b;
+  --on-primary: #201612;
+  --primary-soft: rgba(255, 139, 114, 0.12);
+  --primary-line: rgba(255, 139, 114, 0.35);
+
+  /* ---- 点缀：青绿 ---- */
+  --accent: #65d8c5;
+  --accent-soft: rgba(101, 216, 197, 0.1);
+  --accent-line: rgba(101, 216, 197, 0.65);
+
+  /* ---- 第三色：暖黄（只给"知识/学习"类） ---- */
+  --amber: #e8bd61;
+  --amber-soft: rgba(232, 189, 97, 0.12);
+
+  /* ---- 米白（反白块） ---- */
+  --bone: #e8e5dc;
+  --bone-dim: #dbd8d0;
+
+  /* ---- 状态 ---- */
+  --success: #83e8b0;
+  --danger: #ff8b72;
+  --danger-soft: rgba(255, 139, 114, 0.08);
+
+  /* ---- 字体 ---- */
+  --font-sans: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei",
+    system-ui, -apple-system, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Consolas", ui-monospace, monospace;
+
+  /* ---- 字号阶梯（一屏最多 4 档） ---- */
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-19: 19px;
+  --fs-22: 22px;
+  --fs-25: 25px;
+  --fs-28: 28px;
+  --fs-34: 34px;
+  --fs-44: 44px;
+  --fs-68: 68px;
+
+  --lh-tight: 1.08;
+  --lh-snug: 1.2;
+  --lh-body: 1.8;
+
+  /* ---- 间距（4 / 8 的倍数） ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
+  --sp-9: 36px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-14: 56px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* ---- 形状（项目里全用 7–8px 小圆角） ---- */
+  --radius-sm: 5px;
+  --radius: 7px;
+  --radius-card: 8px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --shadow-lift: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --shadow-primary: 0 12px 30px rgba(255, 139, 114, 0.18);
+  --ring-accent: 0 0 0 3px rgba(101, 216, 197, 0.1);
+
+  /* ---- 布局 ---- */
+  --container: 1240px;
+  --gutter: 24px;
+  --topbar-h: 72px;
+
+  /* ---- 动效（克制：150–250ms，只动 transform / opacity） ---- */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 160ms;
+  --dur-slow: 200ms;
+  --dur-page: 240ms;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --gutter: 20px;
+    --topbar-h: 64px;
+  }
+}

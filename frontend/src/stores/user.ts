@@ -114,6 +114,28 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  /**
+   * 更新个人信息（昵称 / 头像）。
+   *
+   * 后端 `PUT /api/v1/users/me` 接收 `Map<String,String>`，只取 `name` 与 `avatar`，
+   * 返回更新后的 UserInfo。这里成功后立刻写回 user 与 localStorage，
+   * 让顶栏、侧栏的头像不用刷新就跟着变。
+   */
+  async function updateProfile(payload: { name?: string; avatar?: string }): Promise<User> {
+    const body: Record<string, string> = {}
+    if (typeof payload.name === 'string') body.name = payload.name
+    if (typeof payload.avatar === 'string') body.avatar = payload.avatar
+
+    const updated = await javaFetch<User>('/api/v1/users/me', {
+      method: 'PUT',
+      body,
+    })
+
+    user.value = updated
+    saveUser(updated)
+    return updated
+  }
+
   function logout(): void {
     user.value = null
     localStorage.removeItem(USER_CACHE_KEY)
@@ -131,6 +153,7 @@ export const useUserStore = defineStore('user', () => {
     login,
     register,
     fetchMe,
+    updateProfile,
     logout,
   }
 })

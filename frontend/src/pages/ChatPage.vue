@@ -1,342 +1,330 @@
-﻿<template>
-  <div class="h-screen flex bg-[#0d0f14] overflow-hidden">
+<template>
+  <div class="chat">
+    <!-- ===== 左侧会话列表 ===== -->
+    <aside class="chat-side">
+      <div class="chat-side__head">
+        <button type="button" class="chat-brand" @click="router.push('/square')">
+          <span class="chat-brand__mark">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M20.8 5.6a5.4 5.4 0 0 0-7.6 0L12 6.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-7.8a5.4 5.4 0 0 0 0-7.6Z"
+              />
+            </svg>
+          </span>
+          AI 伴侣
+        </button>
 
-    <!-- 左侧边栏 -->
-    <aside class="w-72 flex-shrink-0 hidden md:flex flex-col border-r border-white/5 bg-[#111318]">
-      <!-- 侧栏头部 -->
-      <div class="p-5 border-b border-white/5">
-        <button
-          @click="createNewConversation"
-          class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-violet-600 to-pink-500 text-white text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-violet-500/20"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-          </svg>
+        <button type="button" class="chat-new" @click="createNewConversation">
+          <Plus :size="15" />
           新对话
         </button>
       </div>
 
-      <!-- 对话列表 -->
-      <div class="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin">
-        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider px-3 py-2">历史对话</p>
+      <div class="chat-list">
+        <p class="chat-list__label">历史对话</p>
 
-        <div
+        <button
           v-for="conv in companionConversations"
           :key="conv.id"
+          type="button"
+          class="conv"
+          :class="{ 'is-active': chatStore.currentConversationId === conv.id }"
           @click="selectConversation(conv.id)"
-          class="group relative flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-all"
-          :class="chatStore.currentConversationId === conv.id
-            ? 'bg-white/8 text-white'
-            : 'text-slate-400 hover:bg-white/4 hover:text-slate-200'"
         >
-          <div class="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors"
-            :class="chatStore.currentConversationId === conv.id ? 'bg-violet-400' : 'bg-transparent group-hover:bg-slate-600'"/>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm truncate">{{ conv.title }}</p>
-            <p class="text-xs text-slate-600 mt-0.5">{{ formatDate(conv.updatedAt) }}</p>
-          </div>
-          <button
+          <span class="conv__dot" aria-hidden="true" />
+          <span class="conv__copy">
+            <span class="conv__title">{{ conv.title }}</span>
+            <span class="conv__time">{{ formatDate(conv.updatedAt) }}</span>
+          </span>
+          <span
+            class="conv__del"
+            role="button"
+            tabindex="0"
+            aria-label="删除这个对话"
             @click.stop="deleteConversation(conv.id)"
-            class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-all flex-shrink-0"
+            @keydown.enter.stop="deleteConversation(conv.id)"
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
+            <X :size="13" />
+          </span>
+        </button>
 
-        <div v-if="companionConversations.length === 0" class="text-center py-10 text-slate-600">
-          <svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-          </svg>
-          <p class="text-sm">暂无对话记录</p>
+        <div v-if="!companionConversations.length" class="chat-list__empty">
+          <MessageSquare :size="26" />
+          <p>暂无对话记录</p>
         </div>
+      </div>
+
+      <div class="chat-side__foot">
+        <AvatarImage
+          :src="userStore.user?.avatar"
+          :name="userStore.user?.name"
+          :seed="userStore.user?.id || 'self'"
+          size="sm"
+        />
+        <div class="chat-side__user">
+          <p class="chat-side__name">{{ userStore.user?.name || '我' }}</p>
+          <p class="chat-side__sub">已登录</p>
+        </div>
+        <button type="button" class="icon-btn" aria-label="我的空间" @click="router.push('/profile')">
+          <Settings2 :size="17" />
+        </button>
       </div>
     </aside>
 
-    <!-- 主聊天区 -->
-    <main class="flex-1 flex flex-col min-w-0">
+    <!-- ===== 主区 ===== -->
+    <main class="chat-main">
+      <!-- 顶栏 -->
+      <header class="chat-head">
+        <button type="button" class="chat-back" aria-label="返回伴侣广场" @click="router.push('/square')">
+          <ArrowLeft :size="18" />
+        </button>
 
-      <!-- 顶部导航 -->
-      <header class="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-white/5 bg-[#111318]/80 backdrop-blur-xl">
-        <div class="flex items-center gap-4">
-          <button @click="$router.push('/square')" class="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-            </svg>
-          </button>
-
-          <div v-if="currentCompanion" class="flex items-center gap-3">
-            <div class="relative">
-              <img
-                :src="currentCompanion.avatar"
-                :alt="currentCompanion.name"
-                @error="handleAvatarError"
-                class="w-10 h-10 rounded-xl object-cover"
-              />
-              <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#111318]"></span>
-            </div>
-            <div>
-              <h2 class="text-sm font-semibold text-white leading-tight">{{ currentCompanion.name }}</h2>
-              <p class="text-xs text-emerald-400">在线</p>
-            </div>
+        <div class="chat-peer">
+          <AvatarImage
+            :src="currentCompanion?.avatar"
+            :name="currentCompanion?.name"
+            :seed="currentCompanion?.id || 'companion'"
+            size="md"
+          />
+          <div class="chat-peer__copy">
+            <p class="chat-peer__name">{{ currentCompanion?.name || '伴侣' }}</p>
+            <p class="chat-peer__meta">
+              <span class="chat-peer__dot" aria-hidden="true" />
+              在线
+              <span class="chat-peer__cat">· {{ currentCompanion?.category || '日常聊天' }}</span>
+            </p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
-          <div v-if="currentCompanion" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 text-xs text-slate-300">
-            <svg class="w-3.5 h-3.5 text-pink-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-            </svg>
-            <span>{{ currentCompanion.intimacy }}%</span>
-          </div>
+        <div class="chat-head__right">
+          <span v-if="currentCompanion" class="intimacy-pill">
+            <ProgressRing :value="currentCompanion.intimacy" :size="26" :stroke="2.5" />
+            默契 {{ currentCompanion.intimacy }}%
+          </span>
+
           <button
-            @click="$router.push({ path: '/create', query: { edit: currentCompanion?.id } })"
+            type="button"
+            class="icon-btn"
             title="编辑伴侣人设"
             aria-label="编辑伴侣人设"
-            class="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+            @click="router.push({ path: '/create', query: { edit: currentCompanion?.id } })"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-            </svg>
+            <SlidersHorizontal :size="17" />
+          </button>
+
+          <button
+            type="button"
+            class="icon-btn"
+            title="随笔笔记"
+            aria-label="随笔笔记"
+            @click="router.push('/notes')"
+          >
+            <NotebookPen :size="17" />
           </button>
         </div>
       </header>
 
-      <!-- 消息区域 -->
-      <div class="flex-1 overflow-y-auto" ref="messagesContainer">
-        <div class="max-w-3xl mx-auto px-4 py-6 space-y-4">
-
-          <!-- 数据/落库异常提示（不打断聊天） -->
-          <p
-            v-if="dataWarning || chatStore.error"
-            class="px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300"
-            role="alert"
-          >
+      <!-- 消息流 -->
+      <div ref="messagesContainer" class="chat-stream">
+        <div class="chat-stream__inner">
+          <!-- 落库/上传等非致命提示 -->
+          <div v-if="dataWarning || chatStore.error" class="chat-warn" role="alert">
+            <AlertCircle :size="14" />
             {{ dataWarning || chatStore.error }}
-          </p>
+          </div>
 
           <!-- 欢迎屏 -->
-          <Transition name="welcome">
-            <div v-if="chatStore.currentMessages.length === 0" class="flex flex-col items-center justify-center py-16 text-center select-none">
-              <div class="w-20 h-20 rounded-3xl overflow-hidden mb-5 ring-2 ring-white/10 shadow-2xl">
-                <img
-                  v-if="currentCompanion"
-                  :src="currentCompanion.avatar"
-                  @error="handleAvatarError"
-                  class="w-full h-full object-cover"
-                />
-              </div>
-              <h3 class="text-xl font-semibold text-white mb-2">Hi，我是 {{ currentCompanion?.name }} ✨</h3>
-              <p class="text-sm text-slate-400 max-w-xs leading-relaxed">{{ currentCompanion?.description || '很高兴认识你，有什么想聊的吗？' }}</p>
+          <div v-if="!chatStore.currentMessages.length && !isTyping" class="chat-welcome">
+            <AvatarImage
+              :src="currentCompanion?.avatar"
+              :name="currentCompanion?.name"
+              :seed="currentCompanion?.id || 'companion'"
+              size="xl"
+            />
+            <h2>Hi，我是 {{ currentCompanion?.name || '你的伴侣' }}</h2>
+            <p>{{ currentCompanion?.description || '很高兴认识你，有什么想聊的吗？' }}</p>
 
-              <!-- 快捷建议 -->
-              <div class="flex flex-wrap justify-center gap-2 mt-8">
-                <button
-                  v-for="s in dynamicSuggestions"
-                  :key="s"
-                  @click="useQuickReply(s)"
-                  class="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:border-violet-500/40 hover:text-white transition-all"
-                >
-                  {{ s }}
-                </button>
-              </div>
+            <div class="chat-welcome__suggests">
+              <button
+                v-for="s in dynamicSuggestions"
+                :key="s"
+                type="button"
+                class="chip"
+                @click="useQuickReply(s)"
+              >
+                {{ s }}
+              </button>
             </div>
-          </Transition>
+          </div>
 
-          <!-- 消息列表 -->
-          <TransitionGroup name="msg">
+          <!-- 消息 -->
+          <TransitionGroup name="msg" tag="div" class="chat-msgs">
             <div
-              v-for="message in chatStore.currentMessages"
+              v-for="(message, index) in chatStore.currentMessages"
               :key="message.id"
-              class="flex gap-3"
-              :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
+              class="msg"
+              :class="message.role === 'user' ? 'msg--me' : 'msg--ai'"
             >
-              <!-- AI 头像 -->
-              <div v-if="message.role === 'assistant'" class="flex-shrink-0 mt-1">
-                <img
-                  :src="currentCompanion?.avatar"
-                  :alt="currentCompanion?.name"
-                  @error="handleAvatarError"
-                  class="w-8 h-8 rounded-xl object-cover ring-1 ring-white/10"
-                />
-              </div>
+              <AvatarImage
+                v-if="message.role === 'assistant'"
+                :src="currentCompanion?.avatar"
+                :name="currentCompanion?.name"
+                :seed="currentCompanion?.id || 'companion'"
+                size="sm"
+              />
 
-              <!-- 消息气泡 -->
-              <div class="flex flex-col max-w-[72%]" :class="message.role === 'user' ? 'items-end' : 'items-start'">
-                <div
-                  class="px-4 py-3 rounded-2xl text-sm leading-relaxed"
-                  :class="message.role === 'user'
-                    ? 'bg-gradient-to-br from-violet-600 to-pink-500 text-white rounded-tr-sm shadow-lg shadow-violet-500/20'
-                    : 'bg-[#1e2130] text-slate-100 rounded-tl-sm border border-white/5'"
-                >
+              <div class="msg__body">
+                <p v-if="message.role === 'assistant'" class="msg__who">
+                  {{ currentCompanion?.name || '伴侣' }}
+                </p>
+
+                <div class="msg__text">
                   <!-- 图片附件 -->
-                  <div v-if="message.images?.length" class="flex flex-wrap gap-2 mb-2">
-                    <img
+                  <div v-if="message.images?.length" class="msg__images">
+                    <button
                       v-for="(img, idx) in message.images"
                       :key="idx"
-                      :src="img"
-                      class="max-w-[200px] max-h-[200px] rounded-xl object-cover cursor-pointer"
+                      type="button"
+                      class="msg__image"
                       @click="openImagePreview(img)"
-                    />
+                    >
+                      <img :src="img" alt="消息图片" />
+                    </button>
                   </div>
-                  <p v-if="message.content" class="whitespace-pre-wrap break-words">{{ message.content }}</p>
-                </div>
-                <!-- 操作栏 (AI消息) -->
-                <div v-if="message.role === 'assistant'" class="flex items-center gap-1 mt-1.5 px-1">
-                  <button
-                    @click="copyMessage(message.content)"
-                    title="复制"
-                    class="p-1.5 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
 
-              <!-- 用户头像 -->
-              <div v-if="message.role === 'user'" class="flex-shrink-0 mt-1">
-                <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center ring-1 ring-white/10 shadow-md">
-                  <span class="text-xs font-bold text-white">我</span>
+                  <!-- 正文：最后一条 AI 消息用打字机，历史消息直出 -->
+                  <TypewriterText
+                    v-if="message.role === 'assistant' && message.content"
+                    :text="message.content"
+                    :enabled="isLastMessage(index) && shouldTypeLast"
+                    :max-duration="1600"
+                    @done="onTyped"
+                  />
+                  <p v-else-if="message.content" class="msg__plain">{{ message.content }}</p>
+                </div>
+
+                <!-- AI 消息操作 -->
+                <div v-if="message.role === 'assistant' && message.content" class="msg__tools">
+                  <button type="button" class="msg__tool" @click="copyMessage(message.content)">
+                    <Copy :size="13" />
+                    复制
+                  </button>
+                  <button
+                    type="button"
+                    class="msg__tool"
+                    :disabled="savingNoteId === message.id"
+                    @click="saveMessageAsNote(message)"
+                  >
+                    <NotebookPen :size="13" />
+                    {{ savingNoteId === message.id ? '保存中…' : '存为笔记' }}
+                  </button>
                 </div>
               </div>
             </div>
           </TransitionGroup>
 
-          <!-- 流式输出气泡 / 打字指示器 -->
-          <Transition name="typing">
-            <div v-if="isTyping" class="flex gap-3 justify-start">
-              <div class="flex-shrink-0 mt-1">
-                <img
-                  :src="currentCompanion?.avatar"
-                  @error="handleAvatarError"
-                  class="w-8 h-8 rounded-xl object-cover ring-1 ring-white/10"
-                />
-              </div>
-              <div class="max-w-[72%] flex flex-col items-start">
-                <div class="px-4 py-3 rounded-2xl rounded-tl-sm bg-[#1e2130] border border-white/5 text-sm text-slate-100 leading-relaxed">
-                  <!-- 有流式内容时显示文字，否则显示dots -->
-                  <p v-if="streamingContent" class="whitespace-pre-wrap break-words">{{ streamingContent }}<span class="inline-block w-0.5 h-4 bg-violet-400 ml-0.5 align-middle animate-blink"></span></p>
-                  <div v-else class="flex items-center gap-1 h-5">
-                    <span class="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style="animation-delay:0s"></span>
-                    <span class="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style="animation-delay:0.15s"></span>
-                    <span class="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style="animation-delay:0.3s"></span>
-                  </div>
-                </div>
+          <!-- 流式输出 / 等待 -->
+          <div v-if="isTyping" class="msg msg--ai">
+            <AvatarImage
+              :src="currentCompanion?.avatar"
+              :name="currentCompanion?.name"
+              :seed="currentCompanion?.id || 'companion'"
+              size="sm"
+            />
+            <div class="msg__body">
+              <p class="msg__who">{{ currentCompanion?.name || '伴侣' }}</p>
+              <div class="msg__text">
+                <p v-if="streamingContent" class="msg__plain">
+                  {{ streamingContent }}
+                  <StreamingCursor />
+                </p>
+                <StreamingCursor v-else dots text="正在想" />
               </div>
             </div>
-          </Transition>
-
+          </div>
         </div>
       </div>
 
       <!-- 输入区 -->
-      <div class="flex-shrink-0 px-4 pb-4 pt-3 border-t border-white/5 bg-[#111318]/80 backdrop-blur-xl">
-        <div class="max-w-3xl mx-auto">
-          <!-- 图片预览条 -->
-          <div v-if="pendingImages.length" class="flex flex-wrap gap-2 mb-2 px-1">
-            <div
-              v-for="(img, idx) in pendingImages"
-              :key="idx"
-              class="relative group"
-            >
-              <img :src="img" class="w-16 h-16 rounded-xl object-cover border border-white/10" />
+      <div class="chat-composer">
+        <div class="chat-composer__inner">
+          <!-- 待发送图片 -->
+          <div v-if="pendingImages.length" class="composer-images">
+            <div v-for="(img, idx) in pendingImages" :key="idx" class="composer-image">
+              <img :src="img" alt="待发送图片" />
               <button
+                type="button"
+                class="composer-image__del"
+                aria-label="移除这张图片"
                 @click="removeImage(idx)"
-                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-700 border border-white/20 text-slate-300 hover:bg-red-500/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
               >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
+                <X :size="11" />
               </button>
             </div>
           </div>
 
-          <div
-            class="flex items-end gap-2 px-3 py-3 rounded-2xl bg-[#1a1d26] border transition-all duration-200"
-            :class="inputFocused ? 'border-violet-500/50 shadow-lg shadow-violet-500/10' : 'border-white/8'"
-          >
-            <!-- 图片上传按钮 -->
+          <div class="composer-shell" :class="{ 'is-focused': inputFocused }">
             <button
-              @click="fileInputRef?.click()"
-              :disabled="isTyping"
+              type="button"
+              class="composer-ico"
               title="上传图片"
-              class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+              aria-label="上传图片"
+              :disabled="isTyping"
+              @click="fileInputRef?.click()"
             >
-              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:18px;height:18px">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
+              <ImagePlus :size="18" />
             </button>
             <input
               ref="fileInputRef"
               type="file"
               accept="image/*"
               multiple
-              class="hidden"
+              class="hidden-input"
               @change="handleFileSelect"
             />
 
             <textarea
-              v-model="messageInput"
               ref="textareaRef"
+              v-model="messageInput"
               rows="1"
-              :placeholder="`发消息给 ${currentCompanion?.name ?? 'TA'}…`"
-              class="flex-1 bg-transparent resize-none text-sm text-white placeholder-slate-600 focus:outline-none leading-relaxed max-h-36 overflow-y-auto"
+              :placeholder="`和 ${currentCompanion?.name ?? 'TA'} 说点什么…`"
+              class="composer-input"
               @keydown.enter.exact.prevent="sendMessage"
               @keydown.enter.shift.exact="() => {}"
               @input="autoResize"
               @focus="inputFocused = true"
               @blur="inputFocused = false"
               @paste="handlePaste"
-            ></textarea>
+            />
 
             <button
-              @click="sendMessage"
+              type="button"
+              class="composer-send"
+              aria-label="发送"
               :disabled="(!messageInput.trim() && !pendingImages.length) || isTyping"
-              class="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-              :class="(messageInput.trim() || pendingImages.length) && !isTyping
-                ? 'bg-gradient-to-br from-violet-600 to-pink-500 text-white hover:opacity-90 active:scale-95 shadow-lg shadow-violet-500/25'
-                : 'bg-white/5 text-slate-600 cursor-not-allowed'"
+              @click="sendMessage"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
+              <Send :size="16" />
             </button>
           </div>
-          <p class="text-xs text-slate-600 text-center mt-2">Enter 发送 · Shift+Enter 换行 · 可粘贴图片</p>
-        </div>
-      </div>
 
-      <!-- 图片全屏预览 -->
-      <Transition name="img-preview">
-        <div
-          v-if="previewImage"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          @click="previewImage = null"
-        >
-          <img :src="previewImage" class="max-w-[90vw] max-h-[90vh] rounded-2xl shadow-2xl object-contain" />
-        </div>
-      </Transition>
-
-          <!-- RAG 开关 -->
-      <div class="flex-shrink-0 border-t border-white/5 bg-[#111318]/60">
-        <div class="px-4 py-2 flex items-center justify-between max-w-4xl mx-auto">
-          <button 
-            @click="enableRAG = !enableRAG"
-            :class="enableRAG ? 'bg-violet-500/20 text-violet-400 border-violet-500/30' : 'bg-white/5 text-slate-500 border-white/10'"
-            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border"
-          >
-            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            RAG 智能记忆
-          </button>
-          <span class="text-xs" :class="enableRAG ? 'text-violet-400' : 'text-slate-500'">
-            {{ enableRAG ? '🧠 已启用 - AI将检索你的记忆和知识库' : '📝 基础模式 - 直接对话' }}
-          </span>
+          <div class="composer-foot">
+            <label class="composer-rag">
+              <ToggleSwitch v-model="enableRAG" size="sm" label="知识库增强" />
+              知识库增强（RAG）
+            </label>
+            <span class="composer-hint">Enter 发送 · Shift + Enter 换行 · 可粘贴图片</span>
+          </div>
         </div>
       </div>
     </main>
+
+    <!-- 图片全屏预览 -->
+    <Transition name="fade">
+      <div v-if="previewImage" class="img-preview" @click="previewImage = null">
+        <img :src="previewImage" alt="预览图片" />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -346,15 +334,37 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companion'
 import { useChatStore } from '@/stores/chat'
 import { useUserStore } from '@/stores/user'
-import { createSvgAvatarDataUrl } from '@/lib/avatar'
+import { useNoteStore } from '@/stores/note'
 import { uploadImage } from '@/lib/api'
+import { compressImage } from '@/lib/image'
 import { useStreamingChat } from '@/composables/useStreamingChat'
+import {
+  AlertCircle,
+  ArrowLeft,
+  Copy,
+  ImagePlus,
+  MessageSquare,
+  NotebookPen,
+  Plus,
+  Send,
+  Settings2,
+  SlidersHorizontal,
+  X,
+} from 'lucide-vue-next'
+import ProgressRing from '@/components/ui/ProgressRing.vue'
+import StreamingCursor from '@/components/ui/StreamingCursor.vue'
+import TypewriterText from '@/components/ui/TypewriterText.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import AvatarImage from '@/components/ui/AvatarImage.vue'
+import { useToast } from '@/composables/useToast'
+import type { Message } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const companionStore = useCompanionStore()
 const chatStore = useChatStore()
 const userStore = useUserStore()
+const noteStore = useNoteStore()
 
 const messageInput = ref('')
 const isTyping = ref(false)
@@ -366,6 +376,19 @@ const pendingImages = ref<string[]>([])
 const previewImage = ref<string | null>(null)
 
 const enableRAG = ref(true)
+const toast = useToast()
+
+/**
+ * 最后一条 AI 消息是否用打字机。
+ * 只在「刚流式结束的那一条」为真，历史消息直出，避免进页面时整屏都在打字。
+ */
+const shouldTypeLast = ref(false)
+
+const isLastMessage = (index: number) => index === chatStore.currentMessages.length - 1
+
+const onTyped = () => {
+  shouldTypeLast.value = false
+}
 
 const { streamingContent, isStreaming, sendStreaming, fetchSuggestions, reset: resetStream } = useStreamingChat()
 
@@ -382,31 +405,7 @@ const autoResize = () => {
   textareaRef.value.style.height = Math.min(textareaRef.value.scrollHeight, 144) + 'px'
 }
 
-// Compress an image File/Blob to a base64 JPEG data URL (max 1024px, quality 0.85)
-const compressImage = (file: File | Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        const MAX = 1024
-        let { width, height } = img
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX }
-          else { width = Math.round(width * MAX / height); height = MAX }
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', 0.85))
-      }
-      img.onerror = reject
-      img.src = e.target?.result as string
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
+// 压缩逻辑已抽到 lib/image.ts（个人空间换头像也要用）
 
 const addImagesFromFiles = async (files: FileList | File[]) => {
   const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'))
@@ -466,6 +465,7 @@ const scrollToBottom = (smooth = false) => {
 }
 
 const selectConversation = async (id: string) => {
+  shouldTypeLast.value = false
   chatStore.selectConversation(id, companionId.value)
   scrollToBottom()
   try {
@@ -492,6 +492,7 @@ const deleteConversation = async (id: string) => {
   if (!confirm('删除这个对话？')) return
   try {
     await chatStore.deleteConversation(id)
+    toast.success('对话已删除')
     scrollToBottom()
   } catch (e) {
     chatStore.error = `删除对话失败：${(e as Error).message}`
@@ -503,13 +504,7 @@ const useQuickReply = (text: string) => {
   sendMessage()
 }
 
-const handleAvatarError = (e: Event) => {
-  const img = e.target as HTMLImageElement
-  if (!img) return
-  const name = currentCompanion.value?.name || 'AI'
-  const label = name.trim().slice(-1) || 'AI'
-  img.src = createSvgAvatarDataUrl({ seed: `${currentCompanion.value?.id}-${label}`, label })
-}
+/** 伴侣头像首字与失败兜底已收进 AvatarImage 组件（按 seed 稳定生成），此处不再需要 */
 
 /** 落库失败等非致命错误只在页面顶部提示，不打断聊天 */
 const dataWarning = ref('')
@@ -577,6 +572,8 @@ const sendMessage = async () => {
     )
 
     chatStore.addMessage(conversationId, 'assistant', assistantReply)
+    // 刚生成的这条用打字机补完，历史消息不受影响
+    shouldTypeLast.value = true
 
     // 流式结束后落库：user + assistant 两条，generate=false 只落库不调 AI（P0-5 方案 A）
     try {
@@ -650,8 +647,42 @@ const generateFallbackReply = (userMessage: string): string => {
 const copyMessage = async (content: string) => {
   try {
     await navigator.clipboard.writeText(content)
+    toast.success('已复制')
   } catch {
-    // silent fail
+    toast.error('复制失败，请手动选择文本')
+  }
+}
+
+/** 正在保存的那条消息 id，用于按钮置灰防重复点击 */
+const savingNoteId = ref('')
+
+/**
+ * 把一条 AI 回复存为笔记。
+ *
+ * 标题不落库，由笔记页从正文首行派生（见 lib/note.ts）。
+ * conversationId 是「从对话存下来」的唯一凭据，后端会校验归属当前用户。
+ * 保存后不跳转，不打断当前对话。
+ */
+const saveMessageAsNote = async (message: Message) => {
+  const conversationId = chatStore.currentConversationId
+  if (!conversationId) {
+    // 草稿态（还没发过消息）后端没有会话可挂，先提示，不静默丢 conversationId
+    toast.info('先发一条消息，再保存为笔记')
+    return
+  }
+
+  savingNoteId.value = message.id
+  try {
+    await noteStore.addNote({
+      content: message.content,
+      companionId: companionId.value,
+      conversationId,
+    })
+    toast.success('已存为笔记，可在「随笔」里查看')
+  } catch (e) {
+    toast.error(`保存失败：${(e as Error).message}`)
+  } finally {
+    savingNoteId.value = ''
   }
 }
 
@@ -703,41 +734,817 @@ watch(companionId, async newId => {
 watch(() => chatStore.currentMessages.length, () => scrollToBottom(true))
 </script>
 
+
 <style scoped>
-/* Message entrance animation */
-.msg-enter-active {
-  transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+/* ==========================================================================
+   对话页
+   视觉：暗色暖调底 + 珊瑚橘主色 + 青绿点缀（与 SquarePage 同一套语言）
+   ========================================================================== */
+
+html,
+body {
+  height: 100%;
 }
+
+.chat {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ---------- 左侧会话列表 ---------- */
+.chat-side {
+  display: flex;
+  width: 272px;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.chat-side__head {
+  padding: var(--sp-5) var(--sp-4) var(--sp-3);
+}
+
+.chat-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px var(--sp-4);
+  border: 0;
+  color: var(--text-strong);
+  background: transparent;
+  font-size: var(--fs-14);
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.chat-brand__mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #17120f;
+  background: var(--primary);
+}
+
+.chat-brand__mark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.chat-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--on-primary);
+  background: var(--primary);
+  font-size: var(--fs-13);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+
+.chat-new:hover {
+  background: var(--primary-hover);
+}
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-2) var(--sp-4);
+}
+
+.chat-list__label {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  letter-spacing: 0.05em;
+}
+
+/* 会话项 */
+.conv {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.conv + .conv {
+  margin-top: 1px;
+}
+
+.conv:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.conv.is-active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-strong);
+}
+
+.conv.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.conv__dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: transparent;
+  transition: background var(--dur) var(--ease);
+}
+
+.conv.is-active .conv__dot {
+  background: var(--accent);
+}
+
+.conv__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.conv__title {
+  display: block;
+  overflow: hidden;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv__time {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.conv__del {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--muted-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.conv:hover .conv__del {
+  opacity: 1;
+}
+
+.conv__del:hover {
+  color: var(--primary);
+  background: var(--danger-soft);
+}
+
+.chat-list__empty {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-10) var(--sp-4);
+  place-items: center;
+  color: var(--muted-faint);
+  text-align: center;
+}
+
+.chat-list__empty p {
+  margin: 0;
+  font-size: var(--fs-13);
+}
+
+.chat-side__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--line);
+}
+
+.chat-side__user {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-side__name {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-side__sub {
+  margin: 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.icon-btn {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.icon-btn:hover {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- 主区 ---------- */
+.chat-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* 顶栏 */
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  padding: 0 var(--sp-6);
+  border-bottom: 1px solid var(--line);
+  background: rgba(17, 19, 17, 0.9);
+  backdrop-filter: blur(18px);
+}
+
+.chat-back {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-left: -8px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-back:hover {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chat-peer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.chat-peer__copy {
+  min-width: 0;
+}
+
+.chat-peer__name {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--fs-14);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.chat-peer__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+
+.chat-peer__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.chat-head__right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+.intimacy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+
+/* 消息流 */
+.chat-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-8) var(--sp-6) var(--sp-6);
+}
+
+.chat-stream__inner {
+  display: flex;
+  max-width: 720px;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.chat-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(232, 189, 97, 0.32);
+  border-radius: var(--radius);
+  background: rgba(232, 189, 97, 0.08);
+  color: var(--amber);
+  font-size: var(--fs-12);
+}
+
+/* 欢迎屏 */
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-12) 0 var(--sp-6);
+  text-align: center;
+}
+
+.chat-welcome h2 {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-strong);
+  font-size: var(--fs-22);
+  font-weight: 720;
+}
+
+.chat-welcome p {
+  max-width: 28em;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+}
+
+.chat-welcome__suggests {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  max-width: 520px;
+  margin-top: var(--sp-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--fs-13);
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.chip:hover {
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 消息 */
+.chat-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.msg {
+  display: flex;
+  gap: var(--sp-3);
+  max-width: 82%;
+}
+
+.msg--me {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.msg__body {
+  min-width: 0;
+}
+
+.msg__who {
+  margin: 0 0 5px;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.msg--me .msg__who {
+  text-align: right;
+}
+
+.msg__text {
+  padding: 11px 15px;
+  border-radius: var(--radius);
+  font-size: var(--fs-14);
+  line-height: 1.7;
+}
+
+.msg--ai .msg__text {
+  border: 1px solid var(--line-soft);
+  border-top-left-radius: 3px;
+  color: var(--text);
+  background: var(--bg-raise);
+}
+
+.msg--me .msg__text {
+  border-top-right-radius: 3px;
+  color: var(--text-strong);
+  background: #2c3f3a;
+}
+
+.msg__plain {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.msg__image {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.msg__image img {
+  display: block;
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: cover;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.msg__image:hover img {
+  opacity: 0.86;
+}
+
+.msg__tools {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.msg:hover .msg__tools {
+  opacity: 1;
+}
+
+.msg__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-faint);
+  background: transparent;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.msg__tool:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 消息进入动画（只动 transform / opacity） */
+.msg-enter-active {
+  transition:
+    opacity var(--dur-slow) var(--ease),
+    transform var(--dur-slow) var(--ease);
+}
+
 .msg-enter-from {
   opacity: 0;
-  transform: translateY(12px) scale(0.96);
+  transform: translateY(10px);
 }
 
-/* Typing bubble */
-.typing-enter-active { transition: all 0.2s ease-out; }
-.typing-leave-active { transition: all 0.15s ease-in; }
-.typing-enter-from, .typing-leave-to { opacity: 0; transform: translateY(6px); }
-
-/* Welcome screen */
-.welcome-enter-active { transition: all 0.4s ease-out; }
-.welcome-leave-active { transition: all 0.2s ease-in; }
-.welcome-enter-from, .welcome-leave-to { opacity: 0; transform: scale(0.97); }
-
-/* Cursor blink */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+/* ---------- 输入区 ---------- */
+.chat-composer {
+  flex-shrink: 0;
+  padding: var(--sp-3) var(--sp-6) var(--sp-5);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
 }
-.animate-blink { animation: blink 0.9s step-end infinite; }
 
-/* Image full-screen preview */
-.img-preview-enter-active { transition: all 0.2s ease-out; }
-.img-preview-leave-active { transition: all 0.15s ease-in; }
-.img-preview-enter-from, .img-preview-leave-to { opacity: 0; }
+.chat-composer__inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+.composer-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.composer-image {
+  position: relative;
+}
+
+.composer-image img {
+  width: 60px;
+  height: 60px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.composer-image__del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--bg-raise);
+  cursor: pointer;
+}
+
+.composer-image__del:hover {
+  color: var(--primary);
+  border-color: var(--primary-line);
+}
+
+.composer-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.composer-shell.is-focused {
+  border-color: var(--accent-line);
+  box-shadow: var(--ring-accent);
+}
+
+.composer-ico {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-faint);
+  background: transparent;
+  cursor: pointer;
+}
+
+.composer-ico:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.composer-ico:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.composer-input {
+  flex: 1;
+  min-height: 34px;
+  max-height: 148px;
+  padding: 7px 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: var(--fs-14);
+  line-height: 1.6;
+  resize: none;
+}
+
+.composer-input::placeholder {
+  color: var(--muted-faint);
+}
+
+.composer-input:focus {
+  outline: none;
+}
+
+.composer-send {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--on-primary);
+  background: var(--primary);
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.composer-send:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.composer-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+
+.composer-rag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.composer-hint {
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+/* ---------- 图片预览 ---------- */
+.img-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: rgba(9, 11, 9, 0.86);
+  cursor: zoom-out;
+}
+
+.img-preview img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: var(--radius-card);
+  object-fit: contain;
+  box-shadow: var(--shadow-lift);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--dur-slow) var(--ease);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 900px) {
+  .chat-side {
+    display: none;
+  }
+
+  .chat-head {
+    padding: 0 var(--sp-4);
+    gap: var(--sp-2);
+  }
+
+  .chat-peer__cat {
+    display: none;
+  }
+
+  .intimacy-pill {
+    display: none;
+  }
+
+  .chat-stream {
+    padding: var(--sp-5) var(--sp-4) var(--sp-4);
+  }
+
+  .chat-composer {
+    padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  }
+
+  .msg {
+    max-width: 92%;
+  }
+
+  .composer-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-enter-active,
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: none;
+  }
+}
 </style>
-

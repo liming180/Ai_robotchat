@@ -1,155 +1,213 @@
 <template>
-  <div class="min-h-screen relative overflow-hidden">
-    <!-- 背景装饰 -->
-    <div class="fixed inset-0 -z-10">
-      <div class="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-pink-600/10 to-transparent"></div>
-    </div>
+  <div class="calendar">
+    <Navbar />
 
-    <!-- 顶部导航 -->
-    <nav class="sticky top-0 z-50 backdrop-blur-xl bg-slate-900/80 border-b border-white/10">
-      <div class="max-w-4xl mx-auto px-6 py-4">
-        <div class="flex items-center gap-4">
-          <button @click="$router.back()" class="p-2 rounded-xl hover:bg-white/5 transition-colors">
-            <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-            </svg>
-          </button>
-          <h1 class="text-2xl font-bold text-white">情绪日历</h1>
+    <main class="calendar-main">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">
+            <CalendarHeart :size="15" />
+            EMOTION CALENDAR
+          </p>
+          <h1 class="page-title">情绪日历</h1>
+          <p class="page-lead">
+            每天记一笔，久了就能看见自己的节奏。伴侣的回应也会参考这里的记录。
+          </p>
         </div>
-      </div>
-    </nav>
+        <p class="page-count">{{ year }} 年 {{ month + 1 }} 月</p>
+      </header>
 
-    <div class="max-w-4xl mx-auto px-6 py-8 space-y-6">
-      <p v-if="error" class="px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-amber-300" role="alert">
+      <div v-if="error" class="alert" role="alert">
+        <AlertCircle :size="15" />
         {{ error }}
-      </p>
-
-      <!-- 记录此刻心情（极简：选情绪 + 一句话 + 强度） -->
-      <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">记录此刻心情</h3>
-        <div class="flex flex-wrap gap-2 mb-4">
-          <button
-            v-for="(meta, type) in emotionMeta"
-            :key="type"
-            type="button"
-            @click="draftEmotion = type"
-            class="px-3 py-2 rounded-xl border text-sm transition-all"
-            :class="draftEmotion === type
-              ? 'border-pink-500/60 bg-pink-500/15 text-white'
-              : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'"
-          >
-            {{ meta.icon }} {{ meta.label }}
-          </button>
-        </div>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <input
-            v-model="draftNote"
-            placeholder="一句话描述此刻（可选）"
-            maxlength="200"
-            class="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:border-pink-500/40"
-            @keydown.enter.prevent="submitMood"
-          />
-          <div class="flex items-center gap-2 text-sm text-slate-400">
-            <span>强度</span>
-            <!-- step=1：原先 step=10 只能选整十，用户想要的 67% 根本调不出来 -->
-            <input v-model.number="draftIntensity" type="range" min="1" max="100" step="1" class="w-28 accent-pink-500" />
-            <span class="w-9 text-right text-slate-300">{{ draftIntensity }}%</span>
-          </div>
-          <button
-            type="button"
-            @click="submitMood"
-            :disabled="saving"
-            class="px-5 py-2 bg-gradient-to-r from-pink-500 to-purple-600 rounded-xl text-white font-medium hover:from-pink-400 hover:to-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {{ saving ? '记录中...' : '记录' }}
-          </button>
-        </div>
-        <p v-if="saveError" class="mt-3 text-sm text-red-300" role="alert">{{ saveError }}</p>
       </div>
 
-      <!-- 统计卡片 -->
-      <div class="grid grid-cols-3 gap-4">
-        <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
-          <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ loading ? '—' : emotionStats.total }}
-          </div>
-          <div class="text-slate-400 text-sm mt-2">总记录</div>
+      <div class="summary">
+        <div class="summary__item">
+          <span>本月记录</span>
+          <strong>
+            <AnimatedNumber :value="emotionStats.total" />
+            <i>天</i>
+          </strong>
         </div>
-        <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
-          <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ loading || !emotionStats.total ? '—' : emotionMeta[emotionStats.dominant].label }}
-          </div>
-          <div class="text-slate-400 text-sm mt-2">主导情绪</div>
+        <div class="summary__item">
+          <span>主导情绪</span>
+          <strong>
+            {{ loading || !emotionStats.total ? '—' : emotionMeta[emotionStats.dominant]?.label }}
+          </strong>
         </div>
-        <div class="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 text-center hover:border-pink-500/30 transition-all">
-          <div class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            {{ loading ? '—' : recordedKinds }}
-          </div>
-          <div class="text-slate-400 text-sm mt-2">情绪种类</div>
+        <div class="summary__item">
+          <span>情绪种类</span>
+          <strong>
+            <AnimatedNumber :value="recordedKinds" />
+            <i>种</i>
+          </strong>
         </div>
       </div>
 
-      <!-- 日历网格 -->
-      <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">{{ year }}年{{ month + 1 }}月</h3>
-        <div class="grid grid-cols-7 gap-2">
-          <!-- 星期标题 -->
-          <div v-for="day in ['日', '一', '二', '三', '四', '五', '六']" :key="day"
-               class="text-center text-xs font-medium text-slate-400 py-2">
-            {{ day }}
-          </div>
-          <!-- 日期格子 -->
-          <div v-for="(day, idx) in calendarDays" :key="`${idx}-${day.date || 'blank'}`"
-               class="aspect-square rounded-xl border border-white/10 flex items-center justify-center transition-all"
-               :class="[
-                 day.emotion === 'happy' ? 'bg-gradient-to-br from-amber-500/20 to-yellow-500/20' :
-                 day.emotion === 'sad' ? 'bg-gradient-to-br from-blue-500/20 to-indigo-500/20' :
-                 day.emotion === 'angry' ? 'bg-gradient-to-br from-red-500/20 to-rose-500/20' :
-                 day.emotion === 'anxious' ? 'bg-gradient-to-br from-purple-500/20 to-violet-500/20' :
-                 'bg-slate-800/20',
-                 day.hasRecord ? 'border-white/20' : 'border-transparent'
-               ]">
-            <div v-if="day.day" class="text-center">
-              <div class="text-sm font-medium text-white">{{ day.day }}</div>
-              <div v-if="day.emotion" class="text-xs mt-1">
-                {{ emotionMeta[day.emotion].icon }}
+      <div class="calendar-grid">
+        <div class="calendar-main-col">
+          <div class="cal-card">
+            <div class="cal-card__head">
+              <h2>{{ year }} 年 {{ month + 1 }} 月</h2>
+              <div class="cal-card__nav">
+                <button type="button" aria-label="上个月" disabled>
+                  <ChevronLeft :size="15" />
+                </button>
+                <button type="button" aria-label="下个月" disabled>
+                  <ChevronRight :size="15" />
+                </button>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- 最近情绪记录 -->
-      <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">最近情绪记录</h3>
-        <div v-if="emotionHistory.length" class="space-y-3">
-          <div v-for="record in emotionHistory.slice(0, 5)" :key="record.id"
-               class="flex items-center gap-3 p-3 rounded-xl bg-white/5">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
-                 :class="`bg-gradient-to-br ${emotionMeta[record.emotion].color} text-white`">
-              {{ emotionMeta[record.emotion].icon }}
-            </div>
-            <div class="flex-1">
-              <div class="text-sm text-white">{{ record.content || emotionMeta[record.emotion].label }}</div>
-              <div class="text-xs text-slate-400 mt-1">
-                {{ formatDate(record.timestamp) }} · 强度 {{ record.intensity }}%
+            <div class="cal">
+              <div class="cal__weekdays">
+                <span v-for="day in weekdays" :key="day">{{ day }}</span>
+              </div>
+
+              <div class="cal__days">
+                <div
+                  v-for="(cell, idx) in calendarDays"
+                  :key="idx"
+                  class="cal__day"
+                  :class="{
+                    'is-blank': !cell.day,
+                    'has-record': cell.hasRecord,
+                    'is-today': cell.day === today,
+                  }"
+                >
+                  <span v-if="cell.day" class="cal__num">{{ cell.day }}</span>
+                  <span
+                    v-if="cell.hasRecord && cell.emotion"
+                    class="cal__mark"
+                    :style="{ background: emotionColor(cell.emotion) }"
+                  />
+                </div>
               </div>
             </div>
+
+            <div class="cal-legend">
+              <span v-for="(meta, type) in emotionMeta" :key="type">
+                <i :style="{ background: emotionColor(type as EmotionType) }" />
+                {{ meta.label }}
+              </span>
+            </div>
           </div>
+
+          <section class="record-card">
+            <h2>记录此刻心情</h2>
+
+            <div class="record-emotions">
+              <button
+                v-for="(meta, type) in emotionMeta"
+                :key="type"
+                type="button"
+                class="record-emotion"
+                :class="{ 'is-active': draftEmotion === type }"
+                @click="draftEmotion = type as EmotionType"
+              >
+                <i :style="{ background: emotionColor(type as EmotionType) }" />
+                {{ meta.label }}
+              </button>
+            </div>
+
+            <div class="record-inputs">
+              <input
+                v-model="draftNote"
+                class="input"
+                type="text"
+                placeholder="一句话描述此刻（可选）"
+                maxlength="200"
+                @keydown.enter.prevent="submitMood"
+              />
+
+              <label class="record-intensity">
+                强度
+                <input
+                  v-model.number="draftIntensity"
+                  type="range"
+                  min="1"
+                  max="100"
+                  step="1"
+                />
+                <b>{{ draftIntensity }}%</b>
+              </label>
+
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="saving"
+                @click="submitMood"
+              >
+                {{ saving ? '记录中…' : '记录' }}
+              </button>
+            </div>
+
+            <p v-if="saveError" class="record-error" role="alert">{{ saveError }}</p>
+
+            <div class="record-foot">
+              <span class="small">记录之后会同步给伴侣，它下次会主动问起这件事。</span>
+            </div>
+          </section>
         </div>
-        <div v-else class="text-center py-8 text-slate-500">
-          <svg class="w-16 h-16 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-          </svg>
-          <p>暂无情绪记录，在上方记录一条试试</p>
-        </div>
+
+        <aside class="calendar-aside">
+          <section class="side-card">
+            <h2>本月分布</h2>
+            <div class="dist">
+              <div v-for="(meta, type) in emotionMeta" :key="type" class="dist__row">
+                <span>{{ meta.label }}</span>
+                <div class="dist__track">
+                  <i
+                    :style="{
+                      width: `${distPercent(type as EmotionType)}%`,
+                      background: emotionColor(type as EmotionType),
+                    }"
+                  />
+                </div>
+                <b>{{ emotionStats.distribution[type as EmotionType] || 0 }}</b>
+              </div>
+            </div>
+          </section>
+
+          <section class="side-card">
+            <h2>最近记录</h2>
+
+            <div v-if="recentRecords.length" class="recent">
+              <div v-for="record in recentRecords" :key="record.id" class="recent__item">
+                <span class="recent__date">{{ shortDate(record.timestamp) }}</span>
+                <div class="recent__copy">
+                  <span class="recent__type">
+                    <i :style="{ background: emotionColor(record.emotion) }" />
+                    {{ emotionMeta[record.emotion]?.label }} {{ record.intensity }}%
+                  </span>
+                  <p v-if="record.content" class="recent__note">{{ record.content }}</p>
+                </div>
+              </div>
+            </div>
+
+            <p v-else class="side-empty">还没有记录，从左边记一笔开始。</p>
+
+            <router-link class="side-link" to="/history">看看那几天的对话 →</router-link>
+          </section>
+
+          <section class="side-card">
+            <h2>怎么用</h2>
+            <p>不需要每天记。真正起伏的那几天记一笔，反而更有用——伴侣能据此调整语气。</p>
+            <p>记录内容只有你自己能看到。</p>
+          </section>
+        </aside>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { AlertCircle, CalendarHeart, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import Navbar from '@/components/Navbar.vue'
+import AnimatedNumber from '@/components/ui/AnimatedNumber.vue'
+import { useToast } from '@/composables/useToast'
 import { useEmotionAnalysis } from '@/composables/useEmotionAnalysis'
 import type { EmotionType } from '@/types'
 
@@ -163,20 +221,44 @@ const {
   error,
 } = useEmotionAnalysis()
 
-/** 首屏统计卡加载态：数据未到时显示「—」，避免 0 → 真实值闪变 */
+const toast = useToast()
 const loading = ref(true)
 
 const emotionStats = computed(() => getEmotionStats())
-const recordedKinds = computed(() =>
-  Object.values(emotionStats.value.distribution).filter(count => count > 0).length
+const recordedKinds = computed(
+  () => Object.values(emotionStats.value.distribution).filter((count) => count > 0).length,
 )
 
-// 日历固定展示当前年月（原版硬编码 2026年7月，与真实记录永远对不上）
+const EMOTION_COLORS: Record<EmotionType, string> = {
+  happy: '#c9a227',
+  sad: '#5b7fb3',
+  angry: '#b0564e',
+  anxious: '#8a6fa8',
+  neutral: '#a1a1a8',
+}
+
+const emotionColor = (type: EmotionType) => EMOTION_COLORS[type] || EMOTION_COLORS.neutral
+
 const now = new Date()
 const year = now.getFullYear()
 const month = now.getMonth()
+const today = now.getDate()
 
-// ── 极简记录入口 ──
+const weekdays = ['一', '二', '三', '四', '五', '六', '日']
+
+const recentRecords = computed(() =>
+  [...emotionHistory.value]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5),
+)
+
+const distPercent = (type: EmotionType) => {
+  const values = Object.values(emotionStats.value.distribution) as number[]
+  const max = Math.max(...values, 1)
+  const current = emotionStats.value.distribution[type] || 0
+  return Math.round((current / max) * 100)
+}
+
 const draftEmotion = ref<EmotionType>('happy')
 const draftIntensity = ref(60)
 const draftNote = ref('')
@@ -190,49 +272,56 @@ const submitMood = async () => {
   try {
     await recordEmotion(draftEmotion.value, draftIntensity.value, draftNote.value.trim())
     draftNote.value = ''
+    toast.success('心情已记录')
   } catch (e) {
     saveError.value = `记录失败：${(e as Error).message}`
+    toast.error('记录失败，请重试')
   } finally {
     saving.value = false
   }
 }
 
-// 生成日历数据
 const calendarDays = computed(() => {
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
   const daysInMonth = lastDay.getDate()
-  const startDayOfWeek = firstDay.getDay()
+  const startOffset = (firstDay.getDay() + 6) % 7
 
-  const calendar: any[] = []
-  for (let i = 0; i < startDayOfWeek; i++) {
+  const calendar: {
+    day: number | ''
+    date?: string
+    emotion?: EmotionType
+    hasRecord: boolean
+  }[] = []
+
+  for (let i = 0; i < startOffset; i += 1) {
     calendar.push({ day: '', hasRecord: false })
   }
 
   const calendarData = getEmotionCalendarData(year, month)
-  for (let day = 1; day <= daysInMonth; day++) {
+  for (let day = 1; day <= daysInMonth; day += 1) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     calendar.push({
       day,
       date: dateStr,
-      emotion: calendarData[dateStr],
-      hasRecord: !!calendarData[dateStr],
+      emotion: calendarData[dateStr] as EmotionType | undefined,
+      hasRecord: Boolean(calendarData[dateStr]),
     })
   }
+
+  while (calendar.length % 7 !== 0) {
+    calendar.push({ day: '', hasRecord: false })
+  }
+
   return calendar
 })
 
-const formatDate = (date: Date) => {
-  const diff = Date.now() - date.getTime()
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
-  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+const shortDate = (date: Date) => {
+  const d = new Date(date)
+  return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 onMounted(async () => {
-  // 拉最近 30 天，覆盖整月日历的需求。
-  // 成功失败都置 false：失败时也要恢复可交互，不能永远停在「—」。
   loading.value = true
   try {
     await load(30)
@@ -241,3 +330,613 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style scoped>
+.calendar {
+  min-height: 100vh;
+}
+
+.calendar-main {
+  width: min(1100px, calc(100% - var(--gutter) * 2));
+  margin: 0 auto;
+  padding: var(--sp-14) 0 var(--sp-24);
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 13px;
+  color: var(--accent);
+  font-size: var(--fs-12);
+  font-weight: 750;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  padding-bottom: var(--sp-8);
+}
+
+.page-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: clamp(30px, 4vw, var(--fs-34));
+  font-weight: 760;
+  line-height: var(--lh-tight);
+}
+
+.page-lead {
+  margin: var(--sp-3) 0 0;
+  max-width: 34em;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+}
+
+.page-count {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-13);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--sp-6);
+}
+
+.summary__item {
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) 0;
+  border-right: 1px solid var(--line);
+}
+
+.summary__item:last-child {
+  border-right: 0;
+}
+
+.summary__item span {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.summary__item strong {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--text-strong);
+  font-size: var(--fs-28);
+  font-weight: 760;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary__item strong i {
+  font-style: normal;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  font-weight: 400;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-6);
+  align-items: start;
+}
+
+.calendar-main-col {
+  min-width: 0;
+}
+
+.cal-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
+}
+
+.cal-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.cal-card__head h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.cal-card__nav {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.cal-card__nav button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+}
+
+.cal-card__nav button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cal {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+}
+
+.cal__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.cal__weekdays span {
+  padding: 4px 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  text-align: center;
+}
+
+.cal__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal__day {
+  position: relative;
+  display: flex;
+  min-height: 58px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 7px 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  transition: background var(--dur) var(--ease);
+}
+
+.cal__day:hover:not(.is-blank) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cal__day.is-blank {
+  pointer-events: none;
+}
+
+.cal__day.has-record {
+  border-color: var(--line);
+}
+
+.cal__day.is-today {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.cal__num {
+  line-height: 1;
+}
+
+.cal__mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cal-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.record-card {
+  margin-top: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
+}
+
+.record-card h2 {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-strong);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.record-emotions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+
+.record-emotion {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--fs-13);
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.record-emotion i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.record-emotion:hover {
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+}
+
+.record-emotion.is-active {
+  border-color: var(--bone);
+  color: #171917;
+  background: var(--bone);
+  font-weight: 700;
+}
+
+.record-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.input {
+  flex: 1 1 240px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--fs-13);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--muted-faint);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--ring-accent);
+}
+
+.record-intensity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
+
+input[type='range'] {
+  width: 108px;
+  height: 24px;
+  accent-color: var(--primary);
+}
+
+.record-intensity b {
+  width: 38px;
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.record-error {
+  margin: var(--sp-3) 0 0;
+  color: var(--primary-hover);
+  font-size: var(--fs-13);
+}
+
+.record-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+.small {
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: var(--fs-13);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.btn-primary {
+  color: var(--on-primary);
+  background: var(--primary);
+  box-shadow: var(--shadow-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.side-card {
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
+}
+
+.side-card + .side-card {
+  margin-top: var(--sp-3);
+}
+
+.side-card h2 {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-strong);
+  font-size: var(--fs-13);
+  font-weight: 650;
+}
+
+.side-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.7;
+}
+
+.side-card p + p {
+  margin-top: var(--sp-3);
+}
+
+.dist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.dist__row {
+  display: grid;
+  grid-template-columns: 52px 1fr 24px;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.dist__track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dist__track i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--dur-slow) var(--ease);
+}
+
+.dist__row b {
+  color: var(--text);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent__item {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.recent__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.recent__date {
+  flex-shrink: 0;
+  padding-top: 2px;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.recent__copy {
+  min-width: 0;
+}
+
+.recent__type {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: var(--fs-13);
+}
+
+.recent__type i {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.recent__note {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.side-empty {
+  margin: 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-13);
+}
+
+.side-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: var(--sp-4);
+  color: var(--accent);
+  font-size: var(--fs-13);
+}
+
+.side-link:hover {
+  text-decoration: underline;
+}
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--sp-4);
+  padding: 11px 14px;
+  border: 1px solid var(--primary-line);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--primary-hover);
+  font-size: var(--fs-13);
+}
+
+@media (max-width: 1024px) {
+  .calendar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-3);
+  }
+}
+
+@media (max-width: 760px) {
+  .calendar-main {
+    padding: var(--sp-10) 0 var(--sp-16);
+  }
+
+  .summary {
+    grid-template-columns: 1fr;
+  }
+
+  .summary__item {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: var(--sp-4) 0;
+  }
+
+  .summary__item:last-child {
+    border-bottom: 0;
+  }
+
+  .cal__day {
+    min-height: 50px;
+    font-size: var(--fs-12);
+  }
+
+  .record-inputs .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dist__track i {
+    transition: none;
+  }
+}
+</style>

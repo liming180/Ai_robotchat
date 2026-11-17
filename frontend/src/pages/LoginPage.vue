@@ -1,255 +1,218 @@
 <template>
-  <div class="min-h-screen relative overflow-hidden flex">
-    <!-- 背景装饰 -->
-    <div class="fixed inset-0 -z-10">
-      <div class="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-br from-pink-600/20 via-purple-600/20 to-transparent"></div>
-      <div class="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-bl from-orange-500/20 via-pink-500/20 to-transparent"></div>
-      <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl animate-pulse"></div>
-      <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" style="animation-delay: 1.5s"></div>
-    </div>
-
-    <!-- 左侧装饰区域 -->
-    <div class="hidden lg:flex lg:w-1/2 items-center justify-center p-12">
-      <div class="max-w-lg">
-        <div class="flex items-center gap-4 mb-8">
-          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-xl shadow-pink-500/30">
-            <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-            </svg>
-          </div>
-          <span class="text-3xl font-bold bg-gradient-to-r from-pink-400 via-purple-400 to-orange-400 bg-clip-text text-transparent">AI 情侣</span>
+  <div class="login">
+      <!-- ===== 左：品牌面 ===== -->
+      <aside class="login-brand">
+        <div class="login-brand__top">
+          <button type="button" class="brand" @click="router.push('/')">
+            <span class="brand-mark">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M20.8 5.6a5.4 5.4 0 0 0-7.6 0L12 6.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-7.8a5.4 5.4 0 0 0 0-7.6Z"
+                />
+              </svg>
+            </span>
+            AI 伴侣
+          </button>
         </div>
-        <h1 class="text-4xl font-bold text-white mb-6">找到属于你的<br>AI 灵魂伴侣</h1>
-        <p class="text-slate-400 text-lg leading-relaxed mb-8">
-          开始一段温暖的 AI 陪伴之旅，让每一天都充满爱与关怀。我们为你准备了最贴心的互动体验。
-        </p>
-        <div class="space-y-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
-              <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-              </svg>
-            </div>
-            <span class="text-slate-300">24小时全天候陪伴</span>
-          </div>
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-              </svg>
-            </div>
-            <span class="text-slate-300">个性化定制专属伴侣</span>
-          </div>
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-xl bg-pink-500/20 flex items-center justify-center">
-              <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-              </svg>
-            </div>
-            <span class="text-slate-300">安全私密的对话环境</span>
-          </div>
+
+        <div class="login-brand__mid">
+          <p class="eyebrow">
+            <Sparkles :size="15" />
+            AI COMPANION
+          </p>
+          <h1 class="login-title">
+            它记得你上周<em>没说完</em>的那句话
+          </h1>
+          <p class="login-lead">
+            登录之后，四位预置伴侣和你的自定义伴侣都在。聊天记录、记忆、情绪轨迹、随笔笔记，
+            跨设备同步。
+          </p>
         </div>
-      </div>
-    </div>
 
-    <!-- 右侧登录表单 -->
-    <div class="flex-1 flex items-center justify-center p-6 lg:p-12">
-      <div class="w-full max-w-md">
-        <!-- 返回按钮 -->
-        <button @click="$router.push('/')" class="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-8">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-          </svg>
-          返回首页
-        </button>
+        <div class="login-brand__foot">
+          <span><Lock :size="15" /> 对话仅自己可见</span>
+          <span><Brain :size="15" /> 记忆可随时删除</span>
+        </div>
+      </aside>
 
-        <!-- 表单卡片 -->
-        <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 shadow-2xl">
-          <div class="text-center mb-8">
-            <h2 class="text-3xl font-bold text-white mb-2">{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
-            <p class="text-slate-400">{{ isLogin ? '登录以继续我们的故事' : '开始你的 AI 陪伴之旅' }}</p>
-          </div>
+      <!-- ===== 右：表单 ===== -->
+      <div class="login-panel">
+        <div class="login-panel__inner">
+          <h2 class="panel-title">{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
+          <p class="panel-sub">
+            {{ isLogin ? '继续和小暖聊，或者换个人。' : '开始你的 AI 陪伴之旅。' }}
+          </p>
 
-          <!-- 切换标签 -->
-          <div class="flex bg-white/5 rounded-2xl p-1.5 mb-8">
-            <button
-              @click="switchMode(true)"
-              :class="[
-                'flex-1 py-3 rounded-xl font-medium transition-all',
-                isLogin ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
-              ]"
-            >
-              登录
-            </button>
-            <button
-              @click="switchMode(false)"
-              :class="[
-                'flex-1 py-3 rounded-xl font-medium transition-all',
-                !isLogin ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
-              ]"
-            >
-              注册
-            </button>
-          </div>
+          <!-- 切换 -->
+          <SegmentedTabs
+            :model-value="isLogin ? 'login' : 'register'"
+            :options="modeOptions"
+            variant="underline"
+            aria-label="登录或注册"
+            class="panel-tabs"
+            @update:model-value="(v) => switchMode(v === 'login')"
+          />
 
           <!-- 错误提示 -->
-          <div v-if="errorMessage" class="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <div v-if="errorMessage" class="form-error" role="alert">
+            <AlertCircle :size="14" />
             {{ errorMessage }}
           </div>
 
-          <!-- 登录表单 -->
-          <form v-if="isLogin" @submit.prevent="handleLogin" class="space-y-5">
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">邮箱</label>
+          <!-- ===== 登录 ===== -->
+          <form v-if="isLogin" class="panel-form" @submit.prevent="handleLogin">
+            <label class="field" :class="{ 'field--error': !isLogin ? false : false }">
+              <span>邮箱</span>
               <input
                 v-model="loginForm.email"
+                class="input"
                 type="email"
                 placeholder="请输入邮箱"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                autocomplete="username"
               />
-            </div>
+            </label>
 
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">密码</label>
+            <label class="field">
+              <span>密码</span>
               <input
                 v-model="loginForm.password"
+                class="input"
                 type="password"
                 placeholder="请输入密码"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                autocomplete="current-password"
               />
+            </label>
+
+            <div class="form-row">
+              <label class="checkbox is-on">
+                <i><Check :size="10" /></i>
+                记住我
+              </label>
+              <button type="button" class="text-link">忘记密码？</button>
             </div>
 
-            <button
-              type="submit"
-              :disabled="isLoading"
-              class="w-full py-4 bg-gradient-to-r from-pink-500 via-purple-500 to-orange-500 rounded-xl font-semibold text-white hover:from-pink-400 hover:via-purple-400 hover:to-orange-400 transition-all shadow-xl shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <span v-if="isLoading" class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              <span v-else>登录</span>
+            <button type="submit" class="btn-primary btn-block" :disabled="isLoading">
+              <span v-if="isLoading" class="spinner" />
+              <template v-else>
+                登录
+                <ArrowRight :size="17" />
+              </template>
             </button>
           </form>
 
-          <!-- 注册表单 - 步骤1: 邮箱验证 -->
-          <form v-else-if="registerStep === 1" @submit.prevent="verifyEmail" class="space-y-5">
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">邮箱</label>
+          <!-- ===== 注册 步骤 1 ===== -->
+          <form
+            v-else-if="registerStep === 1"
+            class="panel-form"
+            @submit.prevent="verifyEmail"
+          >
+            <label class="field">
+              <span>邮箱</span>
               <input
                 v-model="registerForm.email"
+                class="input"
                 type="email"
                 placeholder="请输入邮箱"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                autocomplete="email"
               />
-            </div>
+            </label>
 
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">验证码</label>
-              <div class="flex gap-3">
+            <label class="field">
+              <span>验证码</span>
+              <div class="code-row">
                 <input
                   v-model="registerForm.code"
+                  class="input"
                   type="text"
                   placeholder="请输入验证码"
-                  class="flex-1 px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                  inputmode="numeric"
                 />
                 <button
                   type="button"
+                  class="btn-ghost code-btn"
+                  :disabled="countdown > 0 || isLoading"
                   @click="sendEmailCode"
-                  :disabled="countdown > 0"
-                  :class="[
-                    'px-5 py-3.5 rounded-xl font-medium whitespace-nowrap transition-all',
-                    countdown > 0
-                      ? 'bg-white/5 text-slate-500 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-400 hover:from-pink-500/30 hover:to-purple-500/30'
-                  ]"
                 >
                   {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
                 </button>
               </div>
-              <p v-if="mockCodeHint" class="text-xs text-pink-400">{{ mockCodeHint }}</p>
-            </div>
+              <small v-if="mockCodeHint" class="code-hint">{{ mockCodeHint }}</small>
+            </label>
 
-            <button
-              type="submit"
-              :disabled="isLoading"
-              class="w-full py-4 bg-gradient-to-r from-pink-500 via-purple-500 to-orange-500 rounded-xl font-semibold text-white hover:from-pink-400 hover:via-purple-400 hover:to-orange-400 transition-all shadow-xl shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <span v-if="isLoading" class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              <span v-else>下一步</span>
+            <button type="submit" class="btn-primary btn-block" :disabled="isLoading">
+              <span v-if="isLoading" class="spinner" />
+              <template v-else>
+                下一步
+                <ArrowRight :size="17" />
+              </template>
             </button>
           </form>
 
-          <!-- 注册表单 - 步骤2: 设置密码 -->
-          <form v-else @submit.prevent="completeRegister" class="space-y-5">
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">用户名</label>
+          <!-- ===== 注册 步骤 2 ===== -->
+          <form v-else class="panel-form" @submit.prevent="completeRegister">
+            <label class="field">
+              <span>用户名</span>
               <input
                 v-model="registerForm.name"
+                class="input"
                 type="text"
                 placeholder="请输入用户名"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                autocomplete="nickname"
               />
-            </div>
+            </label>
 
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">设置密码</label>
+            <label class="field">
+              <span>设置密码</span>
               <input
                 v-model="registerForm.password"
+                class="input"
                 type="password"
-                placeholder="请设置密码（至少6位）"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                placeholder="请设置密码（至少 6 位）"
+                autocomplete="new-password"
               />
-            </div>
+            </label>
 
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-slate-300">确认密码</label>
+            <label class="field">
+              <span>确认密码</span>
               <input
                 v-model="registerForm.confirmPassword"
+                class="input"
                 type="password"
                 placeholder="请再次输入密码"
-                class="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
+                autocomplete="new-password"
               />
-            </div>
+            </label>
 
-            <div class="flex gap-3">
-              <button
-                type="button"
-                @click="registerStep = 1"
-                class="flex-1 py-4 bg-white/5 border border-white/10 rounded-xl font-semibold text-slate-300 hover:bg-white/10 transition-all"
-              >
-                上一步
-              </button>
-              <button
-                type="submit"
-                :disabled="isLoading"
-                class="flex-1 py-4 bg-gradient-to-r from-pink-500 via-purple-500 to-orange-500 rounded-xl font-semibold text-white hover:from-pink-400 hover:via-purple-400 hover:to-orange-400 transition-all shadow-xl shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <span v-if="isLoading" class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                <span v-else>注册</span>
+            <div class="form-actions">
+              <button type="button" class="btn-ghost" @click="registerStep = 1">上一步</button>
+              <button type="submit" class="btn-primary" :disabled="isLoading">
+                <span v-if="isLoading" class="spinner" />
+                <template v-else>注册</template>
               </button>
             </div>
           </form>
-        </div>
 
-        <!-- 底部协议 -->
-        <p class="text-center text-slate-500 text-sm mt-8">
-          {{ isLogin ? '登录即表示' : '注册即表示' }}同意
-          <a href="#" class="text-pink-400 hover:text-pink-300">用户协议</a>
-          和
-          <a href="#" class="text-pink-400 hover:text-pink-300">隐私政策</a>
-        </p>
+          <p class="panel-legal">
+            继续即表示同意 <button type="button" class="text-link">服务条款</button> 与
+            <button type="button" class="text-link">隐私政策</button>。我们只在你的账号内保存对话内容，不用于训练。
+          </p>
+        </div>
       </div>
     </div>
-  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { AlertCircle, ArrowRight, Brain, Check, Lock, Sparkles } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { ApiError } from '@/lib/api'
+import SegmentedTabs, { type SegmentedOption } from '@/components/ui/SegmentedTabs.vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+
 const isLogin = ref(true)
 const isLoading = ref(false)
 const countdown = ref(0)
@@ -259,9 +222,14 @@ const errorMessage = ref('')
 /** mock 模式下后端回传的固定验证码提示 */
 const mockCodeHint = ref('')
 
+const modeOptions: SegmentedOption[] = [
+  { label: '登录', value: 'login' },
+  { label: '注册', value: 'register' },
+]
+
 const loginForm = ref({
   email: '',
-  password: ''
+  password: '',
 })
 
 const registerForm = ref({
@@ -269,22 +237,27 @@ const registerForm = ref({
   code: '',
   name: '',
   password: '',
-  confirmPassword: ''
+  confirmPassword: '',
 })
 
-// 登录成功后回到来源页（守卫写入的 redirect），无来源则去首页
+/** 登录成功后回到来源页（守卫写入的 redirect），无来源则去首页 */
 const goAfterLogin = () => {
   const redirect = route.query.redirect
-  const target = typeof redirect === 'string' && redirect.startsWith('/') && redirect !== '/login'
-    ? redirect
-    : '/'
+  const target =
+    typeof redirect === 'string' && redirect.startsWith('/') && redirect !== '/login'
+      ? redirect
+      : '/'
   router.push(target)
 }
 
-// 如果已经登录，直接跳转到首页
-watch(() => userStore.isAuthenticated, (newVal) => {
-  if (newVal) goAfterLogin()
-}, { immediate: true })
+// 已登录则直接跳走
+watch(
+  () => userStore.isAuthenticated,
+  (newVal) => {
+    if (newVal) goAfterLogin()
+  },
+  { immediate: true },
+)
 
 /** 把 ApiError 的 message 原样展示，其它异常给通用文案 */
 const showError = (error: unknown, fallback: string) => {
@@ -293,12 +266,19 @@ const showError = (error: unknown, fallback: string) => {
 }
 
 const switchMode = (login: boolean) => {
+  if (isLogin.value === login) return
   isLogin.value = login
   registerStep.value = 1
   errorMessage.value = ''
   mockCodeHint.value = ''
   loginForm.value = { email: '', password: '' }
-  registerForm.value = { email: '', code: '', name: '', password: '', confirmPassword: '' }
+  registerForm.value = {
+    email: '',
+    code: '',
+    name: '',
+    password: '',
+    confirmPassword: '',
+  }
 }
 
 const sendEmailCode = async () => {
@@ -392,3 +372,382 @@ const handleLogin = async () => {
   }
 }
 </script>
+
+<style scoped>
+.login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  min-height: 100vh;
+}
+
+/* ---------- 左：品牌面 ---------- */
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--sp-10) var(--sp-16);
+  border-right: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 139, 114, 0.14), transparent 26rem),
+    radial-gradient(circle at 84% 30%, rgba(101, 216, 197, 0.08), transparent 24rem);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0;
+  border: 0;
+  color: var(--text-strong);
+  background: transparent;
+  font-size: var(--fs-16);
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.brand-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: #17120f;
+  background: var(--primary);
+  box-shadow: 0 8px 24px rgba(255, 139, 114, 0.22);
+}
+
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.login-brand__mid {
+  max-width: 30em;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 13px;
+  color: var(--accent);
+  font-size: var(--fs-12);
+  font-weight: 750;
+}
+
+.login-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: clamp(34px, 4.4vw, var(--fs-44));
+  font-weight: 760;
+  line-height: var(--lh-tight);
+}
+
+.login-title em {
+  font-style: normal;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.login-lead {
+  max-width: 26em;
+  margin: var(--sp-6) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-16);
+  line-height: var(--lh-body);
+}
+
+.login-brand__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.login-brand__foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.login-brand__foot svg {
+  color: var(--accent);
+}
+
+/* ---------- 右：表单 ---------- */
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-12);
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.login-panel__inner {
+  width: 100%;
+  max-width: 356px;
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--fs-25);
+  font-weight: 720;
+}
+
+.panel-sub {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.panel-tabs {
+  margin: var(--sp-5) 0 var(--sp-5);
+}
+
+.panel-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.field {
+  display: block;
+}
+
+.field > span {
+  display: block;
+  margin-bottom: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 650;
+}
+
+.field > small {
+  display: block;
+  margin-top: 7px;
+  font-size: var(--fs-12);
+}
+
+.input {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--fs-14);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--muted-faint);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--ring-accent);
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: var(--sp-4);
+  padding: 10px 12px;
+  border: 1px solid var(--primary-line);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--primary-hover);
+  font-size: var(--fs-13);
+}
+
+.code-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.code-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-btn {
+  flex-shrink: 0;
+  min-width: 104px;
+  font-variant-numeric: tabular-nums;
+}
+
+.code-hint {
+  color: var(--accent);
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+
+.checkbox i {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 4px;
+  color: #17120f;
+  background: var(--primary);
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.btn-primary,
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: var(--fs-14);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.btn-primary {
+  color: var(--on-primary);
+  background: var(--primary);
+  box-shadow: var(--shadow-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  background: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.btn-primary:disabled,
+.btn-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: var(--sp-1);
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+
+.form-actions > * {
+  flex: 1;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(32, 22, 18, 0.28);
+  border-top-color: var(--on-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.panel-legal {
+  margin: var(--sp-6) 0 0;
+  color: var(--muted-faint);
+  font-size: var(--fs-12);
+  line-height: 1.7;
+}
+
+.panel-legal .text-link {
+  font-size: inherit;
+  color: var(--muted);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1024px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+
+  .login-brand {
+    display: none;
+  }
+
+  .login-panel {
+    border-left: 0;
+    padding: var(--sp-10) var(--sp-6);
+  }
+}
+
+@media (max-width: 480px) {
+  .login-panel {
+    padding: var(--sp-8) var(--sp-5);
+  }
+
+  .login-panel__inner {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+</style>
