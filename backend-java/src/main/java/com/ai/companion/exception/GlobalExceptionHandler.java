@@ -31,6 +31,13 @@ public class GlobalExceptionHandler {
         return Result.error(400, e.getMessage());
     }
 
+    /** 邮件未成功发送：503，前端展示业务提示，不能伪装成验证码发送成功。 */
+    @ExceptionHandler(EmailSendException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<?> handleEmailSendException(EmailSendException e) {
+        return Result.error(503, e.getMessage());
+    }
+
     /** 下游服务（如 8002 RAG）不可用：502，与自身 500 区分开，前端提示语更准确。 */
     @ExceptionHandler(ServiceUnavailableException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)

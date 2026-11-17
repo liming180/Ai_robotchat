@@ -5,6 +5,7 @@ import com.ai.companion.dto.response.AuthResponse;
 import com.ai.companion.entity.User;
 import com.ai.companion.mapper.UserMapper;
 import com.ai.companion.service.AuthService;
+import com.ai.companion.service.EmailService;
 import com.ai.companion.util.JwtUtil;
 import com.ai.companion.util.PasswordUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -37,6 +38,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordUtil passwordUtil;
     private final JwtUtil jwtUtil;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final EmailService emailService;
 
     /**
      * 验证码 mock 开关。默认 false（真实模式），只有 application.yml 显式配置
@@ -57,9 +59,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String code = String.format("%06d", new Random().nextInt(1000000));
+        // 必须先发信、后存码。SMTP 失败时异常向上抛，不落 Redis，避免「显示成功但收不到码」。
+        emailService.sendVerificationCode(email, code);
+        // 真实模式保持原契约：email:code:<邮箱>，5 分钟 TTL；验证码不写日志、不随响应返回。
         redisTemplate.opsForValue().set(codeKey(email), code, CODE_TTL_MINUTES, TimeUnit.MINUTES);
-        // TODO: 接入真实邮件服务后替换此处的控制台输出
-        System.out.println("Email code sent to " + email + ": " + code);
         return null;
     }
 

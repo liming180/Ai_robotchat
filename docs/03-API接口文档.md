@@ -90,6 +90,14 @@ X-Service-Token: {SERVICE_TOKEN}
 ```
 
 > `data.code` 仅在 `app.email.mock=true`（本地联调）时返回，方便直接注册；生产环境必须关闭 mock，此时该字段不出现。
+>
+> **真实模式（2026-11-17 接入）**：服务端生成 6 位验证码 → 通过 QQ 邮箱 SMTP（465 SMTPS）发信 → 仅发信成功后写 Redis（`email:code:<邮箱>`，5 分钟 TTL）。邮件注明注册用途与 5 分钟有效期。
+>
+> SMTP 失败、连接超时或 `MAIL_*` 配置缺失时返回 HTTP **503**，不写 Redis、不返回成功；响应示例：
+> ```json
+> { "code": 503, "message": "验证码邮件发送失败，请稍后重试", "data": null }
+> ```
+> 配置缺失时 `message` 为「邮件服务未配置，请检查 MAIL_HOST、MAIL_USERNAME、MAIL_PASSWORD」。SMTP 原始错误仅写服务端日志，不向前端泄露授权码或连接细节。
 
 ### 2. 用户注册
 
