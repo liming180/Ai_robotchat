@@ -99,6 +99,13 @@ backend-java/uploads/
 
 # 例外：lib/ 是 Python 模板规则，误伤前端源码目录（avatar.ts/utils.ts/api.ts）
 !frontend/src/lib/
+# RAG 管理前端（2026-11-17）：*.env / lib/ 规则同样会误伤，补两条例外
+!RAG-Knowledge-System/frontend/.env.example
+!RAG-Knowledge-System/frontend/src/lib/
 
 # Git Bash 崩溃转储（偶发产生，不入库）
 *.stackdump
+
+# Milvus 配置（含明文密钥，不入库）
+deploy/milvus/milvus.yaml
+deploy/milvus/ops.local.md
