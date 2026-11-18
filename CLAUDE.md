@@ -105,14 +105,14 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 
 ### 笔记模块（Java，2026-11-16）
 
-`/api/v1/notes` 四个端点（列表分页对象 / 新增 / 更新 / 删除），表 `note`（`user_id` + `companion_id` + `content` + `tags` 逗号分隔）。归属校验：他人笔记统一 400「笔记不存在」，不区分无权（防探测）。**删除伴侣时笔记与会话/消息同事务逻辑删除**。前端 `stores/note.ts` 已从 localStorage 迁到 API，`NotesPage.vue` 提供「写笔记」模态框。详见 `docs/任务十一-笔记后端实施方案.md`。
+`/api/v1/notes` 四个端点（列表分页对象 / 新增 / 更新 / 删除），表 `note`（`user_id` + `companion_id` + `content` + `tags` 逗号分隔）。归属校验：他人笔记统一 400「笔记不存在」，不区分无权（防探测）。**删除伴侣时笔记与会话/消息同事务逻辑删除**。前端 `stores/note.ts` 已从 localStorage 迁到 API，`NotesPage.vue` 提供「写笔记」模态框。详见 `docs/任务十一-笔记后端实施方案.md`。聊天页草稿态守卫 toast（`saveMessageAsNote` 的「先发一条消息」分支）为防御性代码：草稿态没有消息操作条，UI 无触达路径（2026-11-17 笔记页验收结论，接受现状不修）。
 
 ## 配置
 
 - `backend/.env`（已被 gitignore）：`ZHIPU_API_KEY`（文本/视觉/图像生成共用）、`ZHIPU_BASE_URL`、`ZHIPU_MODEL`（文本 `glm-4.5-air`）、`ZHIPU_VISION_MODEL`（视觉 `glm-4v-flash`）、`ZHIPU_IMAGE_MODEL`（图像 `cogview-4`，置空走 SVG 降级）、`LLM_TEMPERATURE`/`LLM_MAX_TOKENS`/`LLM_TOP_P`，另有 `DATABASE_URL`（SQLite 或 PostgreSQL）、`REDIS_URL`、`APP_HOST`/`APP_PORT`/`APP_DEBUG`、**`SERVICE_TOKEN`**（流式端点共享密钥，留空则不校验）。键名清单见 `backend/.env.example`。密钥只写 `.env`，文档一律 `sk-***` 占位。
 - `frontend/.env.development`（已被 gitignore，**不入库**）：`VITE_API_BASE_URL`（8081）、`VITE_AI_BASE_URL`（5000）、`VITE_SERVICE_TOKEN`（与后端一致）。入库的是 `frontend/.env.example` 模板。**不要给 `.env.development` 加 `!` 反向例外**——加了 token 后就会泄漏进 git 历史。
 - `AI_INTEGRATION.md` — 双链路架构文档，密钥一律 `sk-***` 占位（历史版本曾含明文，git 历史中仍存留旧智谱密码，勿再引用）。
-- **Java 端密钥注入**：`backend-java/application.yml` 中 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}`，**JWT 签名密钥为 `${JWT_SECRET:开发默认值}`**——三者的模板见 `backend-java/.env.example`。本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。未设置 `JWT_SECRET` 时启动会打印告警（`JwtUtil` 的 `@PostConstruct`），生产部署必须注入。
+- **Java 端密钥注入**：`backend-java/application.yml` 中 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}`，**JWT 签名密钥为 `${JWT_SECRET:开发默认值}`**——三者的模板见 `backend-java/.env.example`。本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。Redis 装在 `D:\IDEA\Redis-x64-3.2.100`（3.2.100），以 Windows 服务「Redis」方式运行、开机自启，conf 设有 `requirepass`，连接失败先查 `REDIS_PASSWORD` 与服务状态。未设置 `JWT_SECRET` 时启动会打印告警（`JwtUtil` 的 `@PostConstruct`），生产部署必须注入。
 - `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp`、`*.stackdump` 等运行时/密钥文件；`RAG-Knowledge-System/backend/storage/uploads/`、`backend-java/uploads/` 上传数据同样不入库。**四个 `.env.example` 模板（backend / frontend / RAG / backend-java）通过 `!` 例外入库，不要误删这些例外规则。**
 
 ## 文档

@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
 
+    # ---- Java 业务后端（登录转发用，2026-11-17 前端方案）----
+    java_auth_url: str = "http://localhost:8081"
+
     # ---- Redis（二期异步队列，db 2）----
     redis_url: str = "redis://localhost:6379/2"
 

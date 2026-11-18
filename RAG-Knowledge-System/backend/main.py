@@ -82,13 +82,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ------------------------------------------------------------------
 # 路由注册
 # ------------------------------------------------------------------
-from app.api.v1 import collections, companions, documents, retrieve, tasks  # noqa: E402
+from app.api.v1 import auth, collections, companions, documents, retrieve, tasks  # noqa: E402
 
 app.include_router(collections.router, prefix="/api/v1/kb", tags=["Collections"])
 app.include_router(documents.router, prefix="/api/v1/kb", tags=["Documents"])
 app.include_router(retrieve.router, prefix="/api/v1/kb", tags=["Retrieve"])
 app.include_router(tasks.router, prefix="/api/v1/kb", tags=["Tasks"])
 app.include_router(companions.router, prefix="/api/v1/kb", tags=["Companions"])
+app.include_router(auth.router)  # 登录转发：/api/v1/auth/login（自有前缀，不挂在 /kb 下）
 
 
 # ------------------------------------------------------------------
