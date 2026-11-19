@@ -32,9 +32,21 @@ class Settings(BaseSettings):
     )
 
     # ---- 向量库 ----
+    # 存储后端选择：milvus（新）/ chroma（旧，保留回退）
+    vector_store_backend: str = "milvus"
+
+    # Chroma 配置（旧后端，保留回退）
     chroma_persist_dir: str = "./storage/chroma_db"
 
-    # ---- Embedding（本地哈希向量，无外部依赖）----
+    # Milvus 配置（新后端，2026-11-19）
+    milvus_host: str = "localhost"
+    milvus_port: int = 19530
+    milvus_user: str = ""  # 留空表示无认证
+    milvus_password: str = ""
+
+    # ---- Embedding ----
+    # Chroma 旧后端：本地哈希向量（256 维）
+    # Milvus 新后端：由 Milvus Function 服务端调用智谱 Embedding-3（2048 维），此处不配置
     embedding_model: str = "simple-hash"
     embedding_dim: int = 256
 

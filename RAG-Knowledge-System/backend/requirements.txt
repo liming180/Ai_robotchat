@@ -23,6 +23,9 @@ langchain-chroma>=0.2.0
 langchain-text-splitters>=0.3.0
 chromadb>=0.4.0
 
+# Milvus 向量库（新后端，2026-11-19）
+pymilvus>=2.6.0
+
 # ---- 二期（异步队列）启用以下依赖，并先安装 Redis ----
 # celery>=5.3.0
 # redis>=5.0.0
