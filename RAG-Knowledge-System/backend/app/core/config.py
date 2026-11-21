@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     milvus_user: str = ""  # 留空表示无认证
     milvus_password: str = ""
 
+    # ---- Rerank（TEI 自托管，2026-11-19）----
+    # 开关关闭时检索走纯 COSINE，行为与接入前逐字节一致
+    rerank_enabled: bool = False
+    # 注意：这是 Milvus 容器视角的地址（docker compose 服务名），不能写 localhost
+    tei_endpoint: str = "http://tei:80"
+
     # ---- Embedding ----
     # Chroma 旧后端：本地哈希向量（256 维）
     # Milvus 新后端：由 Milvus Function 服务端调用智谱 Embedding-3（2048 维），此处不配置

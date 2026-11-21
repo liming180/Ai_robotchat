@@ -196,16 +196,35 @@ class MilvusStore:
 
         expr = " && ".join(filter_expr) if filter_expr else ""
 
+        # 构造 ranker（rerank 是查询时传参：不挂 schema、不改集合、无需重建）
+        ranker = None
+        if settings.rerank_enabled:
+            ranker = Function(
+                name="rerank",
+                function_type=FunctionType.RERANK,
+                input_field_names=["text"],
+                params={
+                    "reranker": "model",
+                    "provider": "tei",
+                    "queries": [query],  # 数量必须与 search 的 nq 一致（此处 nq=1）
+                    "endpoint": settings.tei_endpoint,  # Milvus 容器视角地址，如 http://tei:80
+                },
+            )
+
         try:
             # 执行检索（query 文本由 Milvus Function 向量化）
-            results = collection.search(
-                data=[query],  # 查询文本
-                anns_field="dense",
-                param={"metric_type": "COSINE", "params": {"ef": 64}},
-                limit=top_k,
-                expr=expr if expr else None,
-                output_fields=["text", "collection_id", "document_id", "chunk_index", "vector_id"],
-            )
+            search_kwargs = {
+                "data": [query],  # 查询文本
+                "anns_field": "dense",
+                "param": {"metric_type": "COSINE", "params": {"ef": 64}},
+                "limit": top_k,
+                "expr": expr if expr else None,
+                "output_fields": ["text", "collection_id", "document_id", "chunk_index", "vector_id"],
+            }
+            if ranker is not None:
+                search_kwargs["ranker"] = ranker
+
+            results = collection.search(**search_kwargs)
 
             # 解析结果
             chunks = []

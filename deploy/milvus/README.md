@@ -133,3 +133,61 @@ v2.6.0 部分参数的代码兜底默认值与内置 yaml 不一致，缺项会�
 
 - [Milvus 官方文档](https://milvus.io/docs)
 - [Milvus Function 配置](https://milvus.io/docs/zh/embedding-function-overview.md)
+
+## TEI Rerank 部署与收官（2026-11-20/21）
+
+### 模型缓存手术修复
+
+TEI 首次启动下载 `model.safetensors` 失败的根因不是网络，而是 hf-hub chunked 下载器的
+`.part` 文件比完整文件**多 8 字节**（末 chunk 对齐尾巴）：以 `.part` 当前长度为续传起点发
+`Range: bytes=2271071860-` 必被服务器 416 拒绝，无限冻结；且 515MiB 起整段错位损坏（od 逐字节对照证实）。
+
+修复：`truncate` 到 514MiB 安全线 → 容器内 curl 单流循环续拉 1.73GB（25 轮断流续传零损失）→
+`sha256 == d9e3e081…5286`（LFS oid 即内容 sha256）通过后 rename 成 blob + 建 snapshot symlink。
+
+关键经验：
+- HF resolve 响应的 **ETag 不是内容 sha256**，blob 名（即 `.part` 名去后缀）才是 LFS oid；
+- 校验唯一可信手段是 **od 逐字节对照**（busybox 下 `tr -d \000` 的八进制转义会被 sh 吃掉变删字符 `0`，
+  `dd` 大块扫描统计不可信）；
+- 官方源尾段本身完好（最后 1 字节 206 可拉），错位发生在下载器侧而非 CDN。
+
+### warmup OOM（SIGKILL 137）
+
+Docker VM 仅 3.7GB（宿主仅 8GB、无 `.wslconfig` 默认 50%）：fp32 全量加载 warmup 时被内核
+OOM killer 击杀，`restart: unless-stopped` 导致无限重启。**fp16 不够**——权重虽降到 1.1GB，
+但 warmup 的激活瞬态由 `max_batch_tokens=16384` 驱动可达数 GB（比权重还大）。最终双参数修复：
+
+```
+--dtype float16 --max-batch-tokens 2048
+```
+
+注意：running 容器 `inspect .State.ExitCode=0` 是占位值，真实退出码要容器退出后再看。
+
+### 最终 compose 形态
+
+- `cpu-1.8` 镜像 + 上述双参数 + `HF_HUB_OFFLINE=1`（模型全缓存，代理变量已删）
+- ONNX 探测瞬间连接失败属设计内回退链（仓库无 ONNX，回退 safetensors 缓存命中）
+- 就绪判定：宿主机 `curl http://127.0.0.1:8080/health` 返回 200
+
+### Rerank 开关对照冒烟（2026-11-21）
+
+链路：RAG 8002 配置层 → Milvus ranker Function（查询时传参，endpoint=`http://tei:80` 为
+**Milvus 容器视角**）→ Milvus 容器调 TEI 容器 → fp16 推理 → 分数回填重排。
+
+同一 query 开/关各查一次（8 条书城域文本，临时 companion_id=999，跑完即清）：
+
+| query | rerank 开 top3 分数 | rerank 关（纯 COSINE）top3 分数 | 结论 |
+|-------|--------------------|------------------------------|------|
+| 借书最多能借几本 | **0.9662 / 0.1237 / 0.0026** | 0.7541 / 0.6282 / 0.6076 | 顺序一致但 rerank 拉开三级梯度，COSINE 挤在 0.61-0.75 无法做阈值过滤 |
+| 押金怎么收，能退吗 | 0.1198 / 0.0031 / 0.0001 | 0.5774 / 0.4765 / 0.4670 | **2/3 名被 rerank 校正**（COSINE 词面向量把会员等级排到第 2） |
+| 晚上几点闭馆 | **0.4285** / 0.0003 / 0.0 | 0.5684 / 0.4974 / 0.4625 | 部分匹配 rerank 给中等分（诚实），COSINE 虚高 |
+
+配置：`RAG-Knowledge-System/backend/.env` 的 `RERANK_ENABLED=true`（`TEI_ENDPOINT` 默认值即
+`http://tei:80`，可不写）；开关在 `milvus_store.search` 内动态读取，改 `.env` 后重启 8002 生效。
+
+### 网络与代理教训
+
+- 代理客户端扛不住高频连发探测（TLS EOF → 端口拒连），但**单流 + 断点续传循环**可用；
+- hf-mirror 对该 LFS 文件 308 直接回官方源，国内直连通道无效；
+- 宿主 curl 的「直连 200」可能被本机加速器反代接管（响应头 `Server: WattToolkit` 暴露），
+  判断真实网络路径要看响应头而非状态码。

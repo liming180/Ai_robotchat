@@ -22,8 +22,29 @@ services:
       - "19530:19530"
       - "9091:9091"
 
+  # TEI 自托管 Rerank 服务（2026-11-19）
+  # 2026-11-20: 模型缓存完整（手术修复：截断 514MiB 溢出段 + 官方源循环续拉 1.73GB，sha256==oid 通过），
+  #   HF_HUB_OFFLINE=1 钉死离线；代理变量仅下载期需要，现已无用，移除。
+  # 就绪判定：宿主机 curl http://127.0.0.1:8080/health 返回 200，或 docker logs milvus-tei 出现 Ready。
+  # 不加 healthcheck：TEI 镜像内无 curl，加了会永久 unhealthy。
+  tei:
+    container_name: milvus-tei
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    # --auto-truncate：bge-reranker-v2-m3 输入上限 512 token，超长 chunk 直接报错，截断兜底
+    # --dtype float16：Docker VM 仅 3.7GB（宿主 8GB、无 .wslconfig 默认 50%），fp32 加载 warmup 时 OOM SIGKILL(137) 无限重启（RestartCount=10）
+    # --max-batch-tokens 2048：TEI warmup 用该值做 dummy batch，16384 的 attention 激活瞬态可达数 GB（比权重还大），是 warmup OOM 真凶；业务单请求 ~10 条×300 tokens，2048 够用
+    command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--auto-truncate", "--dtype", "float16", "--max-batch-tokens", "2048"]
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - tei_models:/data
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
 volumes:
   milvus:
+  tei_models:
 
 networks:
   default:

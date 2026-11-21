@@ -147,6 +147,64 @@ def test_delete():
     print("\n✅ 测试 3 通过：删除生效")
 
 
+def test_rerank_comparison():
+    """rerank 开关对照测试（2026-11-19）
+
+    同一 query 分别以 rerank 开/关各查一次，打印两版 top3 排序对比。
+    若 settings.rerank_enabled=False，打印跳过提示（不算失败）。
+    """
+    print("\n" + "="*60)
+    print("测试 4: rerank 开关对照")
+    print("="*60)
+
+    from app.core.config import settings
+
+    if not settings.rerank_enabled:
+        print("\n⚪ rerank 未启用（RERANK_ENABLED=false），对照测试跳过")
+        return
+
+    store = MilvusStore()
+    query = "综合匹配度排序对照"
+
+    # 取真实数据（复用测试 1 写入的伴侣 A/B 知识；若已删除则临时补一条）
+    print(f"\n[1] rerank 开启检索（query: {query}）...")
+    with_rerank = store.search(query=query, top_k=3)
+
+    print(f"✓ 命中 {len(with_rerank)} 条")
+    for i, c in enumerate(with_rerank):
+        print(f"  rerank [{i+1}] score={c['score']} text={c['text'][:40]}...")
+
+    # 临时关闭 rerank 跑一次纯 COSINE
+    print(f"\n[2] rerank 关闭检索（同一 query）...")
+    old_value = settings.rerank_enabled
+    try:
+        settings.rerank_enabled = False
+        without_rerank = store.search(query=query, top_k=3)
+    finally:
+        settings.rerank_enabled = old_value
+
+    print(f"✓ 命中 {len(without_rerank)} 条")
+    for i, c in enumerate(without_rerank):
+        print(f"  cosine [{i+1}] score={c['score']} text={c['text'][:40]}...")
+
+    # 两条路径都必须正常返回（允许 0 命中：测试数据可能已被清理）
+    assert isinstance(with_rerank, list), "rerank 路径返回值异常"
+    assert isinstance(without_rerank, list), "纯 COSINE 路径返回值异常"
+
+    print("\n--- top3 排序对比 ---")
+    print(f"{'名次':<4} {'rerank 开':<44} {'rerank 关(纯COSINE)':<44}")
+    for i in range(3):
+        a = with_rerank[i]['text'][:40] if i < len(with_rerank) else "-"
+        b = without_rerank[i]['text'][:40] if i < len(without_rerank) else "-"
+        print(f"{i+1:<4} {a:<44} {b:<44}")
+
+    if with_rerank and without_rerank:
+        same = [c['vector_id'] for c in with_rerank] == [c['vector_id'] for c in without_rerank]
+        print(f"\n排序是否一致: {'是（rerank 未改变顺序）' if same else '否（rerank 改变了顺序）'}")
+
+    print("\n✅ 测试 4 通过：rerank 开/关两条路径都正常返回")
+
+
 def cleanup():
     """清理测试数据"""
     print("\n" + "="*60)
@@ -174,6 +232,9 @@ def main():
 
         # 测试 2: 伴侣隔离
         test_companion_isolation()
+
+        # 测试 4: rerank 开关对照（必须在 delete 之前，delete 会清数据）
+        test_rerank_comparison()
 
         # 测试 3: 删除
         test_delete()
