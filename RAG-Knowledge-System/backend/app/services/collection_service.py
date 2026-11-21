@@ -27,9 +27,13 @@ class CollectionService:
         companion_id: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_id: Optional[str] = None,
     ) -> Tuple[List[KbCollection], int]:
+        """知识库列表。``owner_id`` 不为空时只返回该用户创建的知识库（鉴权强制化）。"""
         q = self.db.query(KbCollection).filter(KbCollection.deleted == 0)
 
+        if owner_id:
+            q = q.filter(KbCollection.created_by == owner_id)
         if keyword:
             like = f"%{keyword}%"
             q = q.filter(

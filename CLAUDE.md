@@ -89,7 +89,14 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - **向量存储（2026-11-21 验收后口径）**：默认 **Milvus 2.6.0** 单集合 `kb_chunks`，`companion_id/collection_id/document_id` 均为 **VARCHAR(36)**（业务 ID 是 32 位无连字符 UUID 或 `preset-*`），Partition Key = `companion_id`；dense 向量由 **Milvus 服务端 Function 调智谱 embedding-3（2048 维）**生成，8002 只传文本。**Chroma（`storage/chroma_db/`，本地哈希 256 维）仅作回退，代码与依赖保留未删**。切换入口 `get_vector_store()`，开关 `VECTOR_STORE_BACKEND=milvus|chroma`。
 - **检索链路**：`retrieve` 路由必须是**普通 `def` 而非 `async def`**——底层 pymilvus `collection.search` 是同步阻塞，实测 async 下慢检索会阻塞事件循环导致 `/health` 无响应。
 - **rerank**：TEI 自托管 `bge-reranker-v2-m3`（容器名 `milvus-tei`，Milvus 容器视角 `http://tei:80`）。**Milvus v2.6.0 的 rerank deadline 源码硬编码 30s，不可配置**；CPU 推理约 24ms/字，4 候选约 22–26s，**当前性能不达标（远超 3s 预算）**，详见 `docs/RAG知识库数据导入验收报告.md`。
-- **鉴权（Phase 2 第一批已完成，2026-11-21）**：`/retrieve` 用 `X-Service-Token`（与 5000 的 `SERVICE_TOKEN` 同值）；`app/core/security.py` 提供 `verify_jwt` / `require_companion_owner`，供第二批管理接口使用。**JWT 与 Java 同源**：8002 只读用户级环境变量 `JWT_SECRET`，`.env` 里**不得**再写 `JWT_SECRET_KEY`（`config.py` 用 `AliasChoices("JWT_SECRET", ...)` 显式绑定，避免历史变体被误读）。启动自检打印密钥**指纹前 8 位**（不打印原值），读到默认值或与 Java 兜底密钥一致时**直接启动失败**。CORS 由通配 `*` 收紧为 `CORS_ORIGINS`（默认 3001）。
+- **鉴权（Phase 2 第一、二批已完成，2026-11-21）**：`/retrieve` 用 `X-Service-Token`（与 5000 的 `SERVICE_TOKEN` 同值）；**其余 15 个管理路由全部要求 `Authorization: Bearer <JWT>` 并做归属校验**，白名单仅 `/health`、`/`、`/api/v1/auth/login`。`tests/test_auth_coverage.py` 断言防漏挂。
+  - **铁律**：归属判断的唯一身份来源是 JWT 的 `userId`，禁止信任请求体/查询参数中的自称身份。
+  - **错误码**：401 未认证 / **403 无权（含不存在，防探测）** / **503 主库不可用**（不得伪装成 403）/ 400 参数非法。
+  - **JWT 与 Java 同源**：8002 只读用户级环境变量 `JWT_SECRET`，`.env` 里**不得**再写 `JWT_SECRET_KEY`（`config.py` 用 `AliasChoices("JWT_SECRET", ...)` 显式绑定）。启动自检打印密钥**指纹前 8 位**，读到默认值或与 Java 兜底密钥一致时**直接启动失败**。
+  - **算法**：Java `.signWith(key)` 按密钥长度自动选算法（64 字节 → **HS512**，yml 注释写 HS256 是过时描述）。8002 验签放行 `HS256/384/512`，杜绝 alg=none 与算法混淆。
+  - **预置伴侣禁建库**：`is_preset=1` 的伴侣不允许用户建 collection（403），否则私有库会进入全员检索范围破坏隔离；预置伴侣仅允许系统级知识。
+  - CORS 由通配 `*` 收紧为 `CORS_ORIGINS`（默认 3001）。
+  - **启动注意**：`start-all.ps1` 用 `Start-Process` 不继承当前 shell 环境，**必须先注入用户级变量再启动**（`[Environment]::SetEnvironmentVariable($n,$v,'Process')`），否则启动自检会按设计失败退出。
 - **Java 密钥口径**：`application.yml` 的 `secret: ${JWT_SECRET:兜底值}` 中兜底值**仅限本地开发**，生产部署必须设置 `JWT_SECRET`（HS256 需 ≥32 字节）。本机已用 `setx` 设置用户级 `JWT_SECRET`，**必须用新终端重启** Java/8002 才生效。
 - 登录转发（3001 前端用）走 `trust_env=False`，上游 Java 5xx 返回 502 而非伪装成 401 密码错误。
 - 回归资产在 `tests/rag_regression/`（18 篇文档 / 26 条预期 / `run_regression.py`），判定口径见该目录 `README.md`。

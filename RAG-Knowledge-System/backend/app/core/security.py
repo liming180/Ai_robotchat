@@ -1,4 +1,4 @@
-"""8002 鉴权基础设施（2026-11-21，Phase 2 鉴权强制化第一批）。
+"""8002 鉴权基础设施（2026-11-21，Phase 2 鉴权强制化）。
 
 设计要点：
 - JWT 与 Java 主后端**同源**：只读用户级环境变量 ``JWT_SECRET``，8002 不单独设值。
@@ -6,6 +6,24 @@
   不一致直接抛异常终止启动，避免带着错密钥静默运行（表现为所有管理接口莫名 401）。
 - 服务间检索用 ``X-Service-Token``，与 5000 流式端点的 ``SERVICE_TOKEN`` 同值。
 - 所有校验函数均设计为 FastAPI 依赖注入（写在函数体内会被 body 校验抢先）。
+
+==================== 铁律（不得违反） ====================
+**所有归属判断的唯一身份来源是 JWT 中的 ``userId``。**
+
+- 禁止信任请求体、查询参数、请求头里任何自称的用户标识（如 ``userId`` /
+  ``createdBy`` / ``ownerId`` 字段）。
+- 任何「查某资源的归属」都必须从资源本身反查到所属 companion/collection 的
+  ``created_by``，再与 ``token.userId`` 比较；不得反过来按客户端传入的身份过滤。
+- 新增路由若涉及用户资源，必须挂 ``Depends(verify_jwt)`` 并调用对应
+  ``require_*_owner``；白名单之外不允许出现无鉴权路由
+  （由 ``tests/test_auth_coverage.py`` 断言）。
+
+================ 错误码口径（与 Java 主后端对齐） ================
+- **401**：未携带 / 令牌无效 / 令牌过期 / 缺 userId。
+- **403**：令牌有效但无权访问该资源（含「不存在」场景，防探测）。
+- **503**：归属校验所需的主库连接不可用 —— 基础设施故障不得伪装成 403。
+- **400**：请求参数本身非法（与归属无关），如缺少 companionId 与 collectionIds。
+==========================================================
 """
 
 from __future__ import annotations
@@ -86,10 +104,16 @@ def verify_jwt(authorization: Optional[str] = Header(None)) -> str:
 
     token = authorization.split(" ", 1)[1].strip()
     try:
+        # 算法必须与 Java 实际签发的一致，不能想当然写死 HS256。
+        # Java 用 `.signWith(key)` 由密钥长度自动选择：64 字节 → HS512，
+        # 32 字节 → HS256。这里只放行 HMAC 族（HS256/384/512），
+        # 既兼容两侧密钥长度变化，又杜绝 alg=none 与非对称算法混淆攻击。
+        # PyJWT 默认校验 exp，options 里再显式声明一次，避免将来被改动带偏。
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
+            algorithms=["HS256", "HS384", "HS512"],
+            options={"require": ["exp"]},
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="令牌已过期")
@@ -97,9 +121,9 @@ def verify_jwt(authorization: Optional[str] = Header(None)) -> str:
         raise HTTPException(status_code=401, detail="令牌无效")
 
     user_id = payload.get("userId")
-    if not user_id:
+    if not user_id or not str(user_id).strip():
         raise HTTPException(status_code=401, detail="令牌缺少 userId")
-    return str(user_id)
+    return str(user_id).strip()
 
 
 def verify_service_token(x_service_token: Optional[str] = Header(None)) -> None:
@@ -115,11 +139,18 @@ def verify_service_token(x_service_token: Optional[str] = Header(None)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing X-Service-Token")
 
 
-def require_companion_owner(user_id: str, companion_id: Optional[str]) -> None:
+def require_companion_owner(user_id: str, companion_id: Optional[str], *, allow_preset: bool = True) -> None:
     """校验 companion 属于当前用户（读主库只读连接）。
 
-    口径与主后端一致：他人资源统一 400，不区分「不存在」与「无权」（防探测）。
-    主库不可用时返回 503，避免把基础设施故障误判成无权。
+    错误码口径：
+    - 归属不匹配 / 不存在：**403**（不区分，防探测）
+    - 主库不可用：**503**（基础设施故障不得伪装成无权）
+
+    ``allow_preset=False`` 时额外拒绝预置伴侣 —— 用于建库场景：
+    预置伴侣只允许系统级知识（created_by=system），用户个性化知识走自建伴侣。
+    原因：retrieve 链路只有 companionId 没有 userId，无法按
+    「本人 OR system」过滤；若允许用户给预设伴侣建库，其私有库会进入
+    所有人聊天的检索范围，破坏伴侣隔离。
     """
     if not companion_id:
         return
@@ -128,10 +159,7 @@ def require_companion_owner(user_id: str, companion_id: Optional[str]) -> None:
 
     from app.db.database import MainSessionLocal
 
-    if MainSessionLocal is None:
-        raise HTTPException(status_code=503, detail="主库连接不可用，无法校验资源归属")
-
-    db = MainSessionLocal()
+    db = _main_session()
     try:
         row = db.execute(
             text("SELECT created_by, is_preset FROM companion WHERE id = :cid AND deleted = 0"),
@@ -141,9 +169,127 @@ def require_companion_owner(user_id: str, companion_id: Optional[str]) -> None:
         db.close()
 
     if row is None:
-        raise HTTPException(status_code=400, detail="知识库不存在")
-    # 预置伴侣归属 system，任何登录用户都可读（与主后端 companion 列表口径一致）
+        raise HTTPException(status_code=403, detail="无权访问该资源")
+
     if row["is_preset"]:
-        return
+        if allow_preset:
+            # 预置伴侣归属 system，全员可读（与主后端伴侣列表口径一致）
+            return
+        raise HTTPException(
+            status_code=403,
+            detail="预置伴侣仅允许系统级知识，请为自己的自建伴侣创建知识库",
+        )
+
     if str(row["created_by"] or "") != user_id:
-        raise HTTPException(status_code=400, detail="知识库不存在")
+        raise HTTPException(status_code=403, detail="无权访问该资源")
+
+
+def _main_session():
+    """获取主库只读会话；不可用时统一 503。"""
+    from app.db.database import MainSessionLocal
+
+    if MainSessionLocal is None:
+        raise HTTPException(status_code=503, detail="主库连接不可用，无法校验资源归属")
+    return MainSessionLocal()
+
+
+def require_collection_owner(user_id: str, collection_id: str):
+    """校验知识库归属，返回 KbCollection（供路由复用，避免二次查询）。"""
+    from app.db.database import SessionLocal
+
+    if SessionLocal is None:
+        raise HTTPException(status_code=503, detail="元数据库不可用")
+
+    db = SessionLocal()
+    try:
+        from app.models.collection import KbCollection
+
+        coll = (
+            db.query(KbCollection)
+            .filter(KbCollection.id == collection_id, KbCollection.deleted == 0)
+            .first()
+        )
+        if coll is None:
+            raise HTTPException(status_code=403, detail="无权访问该资源")
+        _assert_collection_owned(coll, user_id)
+        db.expunge(coll)
+        return coll
+    finally:
+        db.close()
+
+
+def require_document_owner(user_id: str, document_id: str):
+    """校验文档归属（经 document → collection 反查），返回 KbDocument。"""
+    from app.db.database import SessionLocal
+
+    if SessionLocal is None:
+        raise HTTPException(status_code=503, detail="元数据库不可用")
+
+    db = SessionLocal()
+    try:
+        from app.models.collection import KbCollection
+        from app.models.document import KbDocument
+
+        doc = (
+            db.query(KbDocument)
+            .filter(KbDocument.id == document_id, KbDocument.deleted == 0)
+            .first()
+        )
+        if doc is None:
+            raise HTTPException(status_code=403, detail="无权访问该资源")
+
+        coll = (
+            db.query(KbCollection)
+            .filter(KbCollection.id == doc.collection_id, KbCollection.deleted == 0)
+            .first()
+        )
+        if coll is None:
+            raise HTTPException(status_code=403, detail="无权访问该资源")
+        _assert_collection_owned(coll, user_id)
+        db.expunge(doc)
+        return doc
+    finally:
+        db.close()
+
+
+def require_task_owner(user_id: str, task_id: str):
+    """校验任务归属（task_id → document → collection 反查），返回 KbDocument。"""
+    from app.db.database import SessionLocal
+
+    if SessionLocal is None:
+        raise HTTPException(status_code=503, detail="元数据库不可用")
+
+    db = SessionLocal()
+    try:
+        from app.models.collection import KbCollection
+        from app.models.document import KbDocument
+
+        doc = (
+            db.query(KbDocument)
+            .filter(KbDocument.task_id == task_id, KbDocument.deleted == 0)
+            .first()
+        )
+        if doc is None:
+            raise HTTPException(status_code=403, detail="无权访问该资源")
+
+        coll = (
+            db.query(KbCollection)
+            .filter(KbCollection.id == doc.collection_id, KbCollection.deleted == 0)
+            .first()
+        )
+        if coll is None:
+            raise HTTPException(status_code=403, detail="无权访问该资源")
+        _assert_collection_owned(coll, user_id)
+        db.expunge(doc)
+        return doc
+    finally:
+        db.close()
+
+
+def _assert_collection_owned(coll, user_id: str) -> None:
+    """知识库归属断言：created_by 必须等于 token.userId。
+
+    无归属（created_by IS NULL）的历史库一律 403 —— 按方案 A「遗留垃圾保持不可见」。
+    """
+    if str(coll.created_by or "") != user_id:
+        raise HTTPException(status_code=403, detail="无权访问该资源")

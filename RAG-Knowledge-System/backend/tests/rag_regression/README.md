@@ -42,6 +42,10 @@ D:\python\python.exe -I tests/rag_regression/run_regression.py --verify-only --s
 - 实测（CPU、`bge-reranker-v2-m3`）：6 条候选约 33.6s（超时）；4 条约 22.7–23.9s；2 条约 11.1s；1 条约 6.6s。耗时近似线性 ≈24ms/字。
 - 因此回归脚本固定 `topK=4`，与生产 5000 链路（`langchain_client.py` 的 `topK:4`）一致。**不做超时自动降 topK**：验收口径必须固定，静默降级会污染对照表；单条 rerank 超时仅重试 1 次（间隔 2s），且原始失败与重试结果都写入 state 与报告。
 
+### 回归库归属（2026-11-21 鉴权强制化后）
+
+两个回归知识库（`19d2aa86…` / `d96f255f…`）的 `created_by` 已一次性显式 UPDATE 为测试账号 `c4250e18…`，否则第二批鉴权上线后会 403 全挂。**第二批之后由脚本新建的库经 JWT 自动带 `created_by`，不再依赖手工补齐。**
+
 ### 本机代理与登录
 
 - 8002 → Java 登录转发和本回归脚本都使用 `trust_env=False`，避免终端代理把 localhost 请求转成 502。
