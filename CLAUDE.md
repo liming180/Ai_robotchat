@@ -13,7 +13,7 @@ AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分�
 | 前端 | `frontend/` | 3000 | Vue 3 + TypeScript + Vite 5 + Pinia + Tailwind CSS |
 | Python AI 服务 | `backend/` | 5000 | FastAPI + 智谱 GLM（glm-4.5-air 文本 / glm-4v-flash 视觉 / cogview-4 图像）+ LangChain 1.x |
 | Java 业务后端 | `backend-java/` | **8081** | Spring Boot 3 + MyBatis Plus + MySQL |
-| RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + Chroma + 本地哈希向量 |
+| RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + **Milvus 2.6.0（默认）+ TEI rerank**；Chroma 保留为回退 |
 
 > **端口口径已闭环（2026-11-15 任务八）**：本机 8080 被无关项目 `xiaoyi-rag-server` 长期占用，Java 固定 **8081**，已写入 `backend-java/src/main/resources/application.yml`（`server.port` 与 `app.upload.base-url`），不再依赖启动参数覆盖。
 
@@ -85,8 +85,14 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 
 ### RAG 知识库服务（RAG-Knowledge-System/backend/）
 
-- 独立 FastAPI 服务（8002）：知识库/文档/切片/检索 API，元数据存 MySQL `rag_knowledge` 库，向量存本目录 `storage/chroma_db/`。
-- Embedding 已从智谱 embedding-3（2048 维）切换为本地哈希向量 `SimpleHashEmbeddings`（256 维，`app/vectorstore/embeddings.py`）——zhipuai 依赖与智谱 key 已移除，**旧 2048 维向量与新实现不兼容，历史知识库需重新导入**。
+- 独立 FastAPI 服务（8002）：知识库/文档/切片/检索 API，元数据存 MySQL `rag_knowledge` 库。
+- **向量存储（2026-11-21 验收后口径）**：默认 **Milvus 2.6.0** 单集合 `kb_chunks`，`companion_id/collection_id/document_id` 均为 **VARCHAR(36)**（业务 ID 是 32 位无连字符 UUID 或 `preset-*`），Partition Key = `companion_id`；dense 向量由 **Milvus 服务端 Function 调智谱 embedding-3（2048 维）**生成，8002 只传文本。**Chroma（`storage/chroma_db/`，本地哈希 256 维）仅作回退，代码与依赖保留未删**。切换入口 `get_vector_store()`，开关 `VECTOR_STORE_BACKEND=milvus|chroma`。
+- **检索链路**：`retrieve` 路由必须是**普通 `def` 而非 `async def`**——底层 pymilvus `collection.search` 是同步阻塞，实测 async 下慢检索会阻塞事件循环导致 `/health` 无响应。
+- **rerank**：TEI 自托管 `bge-reranker-v2-m3`（容器名 `milvus-tei`，Milvus 容器视角 `http://tei:80`）。**Milvus v2.6.0 的 rerank deadline 源码硬编码 30s，不可配置**；CPU 推理约 24ms/字，4 候选约 22–26s，**当前性能不达标（远超 3s 预算）**，详见 `docs/RAG知识库数据导入验收报告.md`。
+- **鉴权（Phase 2 第一批已完成，2026-11-21）**：`/retrieve` 用 `X-Service-Token`（与 5000 的 `SERVICE_TOKEN` 同值）；`app/core/security.py` 提供 `verify_jwt` / `require_companion_owner`，供第二批管理接口使用。**JWT 与 Java 同源**：8002 只读用户级环境变量 `JWT_SECRET`，`.env` 里**不得**再写 `JWT_SECRET_KEY`（`config.py` 用 `AliasChoices("JWT_SECRET", ...)` 显式绑定，避免历史变体被误读）。启动自检打印密钥**指纹前 8 位**（不打印原值），读到默认值或与 Java 兜底密钥一致时**直接启动失败**。CORS 由通配 `*` 收紧为 `CORS_ORIGINS`（默认 3001）。
+- **Java 密钥口径**：`application.yml` 的 `secret: ${JWT_SECRET:兜底值}` 中兜底值**仅限本地开发**，生产部署必须设置 `JWT_SECRET`（HS256 需 ≥32 字节）。本机已用 `setx` 设置用户级 `JWT_SECRET`，**必须用新终端重启** Java/8002 才生效。
+- 登录转发（3001 前端用）走 `trust_env=False`，上游 Java 5xx 返回 502 而非伪装成 401 密码错误。
+- 回归资产在 `tests/rag_regression/`（18 篇文档 / 26 条预期 / `run_regression.py`），判定口径见该目录 `README.md`。
 
 ### 接口约定
 

@@ -45,9 +45,15 @@ def _search_knowledge_remote(companion_id: str, query: str, config) -> Optional[
     """
     import requests
 
+    headers = {}
+    service_token = str(getattr(config, "SERVICE_TOKEN", "") or "").strip()
+    if service_token:
+        headers["X-Service-Token"] = service_token
+
     resp = requests.post(
         config.RAG_SERVICE_URL + "/api/v1/kb/retrieve",
         json={"companionId": companion_id, "query": query, "topK": 4},
+        headers=headers,
         timeout=config.RAG_TIMEOUT,
     )
     # 5xx 视为故障，抛异常触发回落

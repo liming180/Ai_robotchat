@@ -12,7 +12,7 @@ from app.schemas.collection import (
     CollectionUpdateRequest,
 )
 from app.services.collection_service import CollectionService
-from app.vectorstore.store import get_chroma_store
+from app.vectorstore.store import get_vector_store
 
 router = APIRouter()
 
@@ -78,7 +78,7 @@ async def delete_collection(collection_id: str, db: Session = Depends(get_db)):
 
     # 先删向量（Chroma 无事务，失败也继续走元数据清理，避免脏读）
     try:
-        get_chroma_store().drop_collection(collection_id)
+        get_vector_store().drop_collection(collection_id)
     except Exception as e:
         print(f"[collections] 删除向量 collection 失败: {e}")
 

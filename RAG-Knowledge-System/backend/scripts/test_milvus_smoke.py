@@ -11,10 +11,28 @@
 import sys
 import os
 
+# Windows 控制台默认 GBK，测试输出的 ✓/✗ 不能让已完成的数据库操作被误判失败。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.vectorstore.milvus_store import MilvusStore
+
+
+def as_chunks(pairs):
+    """把统一接口的 (Document, score) 转成断言用字典。"""
+    return [{"text": doc.page_content, "score": score} for doc, score in pairs]
+
+# 使用真实业务 ID 形态：36 字符带连字符 UUID，而不是冒烟专用的 1 / 2。
+COMPANION_A = "11111111-1111-4111-8111-111111111111"
+COMPANION_B = "22222222-2222-4222-8222-222222222222"
+COLLECTION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+COLLECTION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+DOCUMENT_A = "10000000-0000-4000-8000-000000000001"
+DOCUMENT_B = "10000000-0000-4000-8000-000000000002"
 
 
 def test_insert_and_search():
@@ -24,6 +42,9 @@ def test_insert_and_search():
     print("="*60)
 
     store = MilvusStore()
+    # 前次控制台编码失败可能在插入后中断；只清理本脚本的固定测试 ID。
+    store.delete_by_collection(collection_id=COLLECTION_A)
+    store.delete_by_collection(collection_id=COLLECTION_B)
 
     # 插入伴侣 A 的知识
     print("\n[1] 插入伴侣 A 的知识...")
@@ -34,11 +55,11 @@ def test_insert_and_search():
     ]
     store.insert(
         texts=texts_a,
-        companion_id=1,  # 伴侣 A
-        collection_id=101,
-        document_id=1001,
+        companion_id=COMPANION_A,
+        collection_id=COLLECTION_A,
+        document_id=DOCUMENT_A,
         chunk_indices=[0, 1, 2],
-        vector_ids=["1001::chunk_0", "1001::chunk_1", "1001::chunk_2"],
+        vector_ids=[f"{DOCUMENT_A}::chunk_{i}" for i in range(3)],
     )
     print(f"✓ 插入成功: {len(texts_a)} 条切片")
 
@@ -51,21 +72,22 @@ def test_insert_and_search():
     ]
     store.insert(
         texts=texts_b,
-        companion_id=2,  # 伴侣 B
-        collection_id=102,
-        document_id=1002,
+        companion_id=COMPANION_B,
+        collection_id=COLLECTION_B,
+        document_id=DOCUMENT_B,
         chunk_indices=[0, 1, 2],
-        vector_ids=["1002::chunk_0", "1002::chunk_1", "1002::chunk_2"],
+        vector_ids=[f"{DOCUMENT_B}::chunk_{i}" for i in range(3)],
     )
     print(f"✓ 插入成功: {len(texts_b)} 条切片")
 
     # 检索伴侣 A 的知识
     print("\n[3] 检索伴侣 A 的知识（query: 口头禅）...")
-    results_a = store.search(
+    results_a = as_chunks(store.search(
+        collection_ids=[COLLECTION_A],
         query="口头禅",
-        companion_id=1,
-        top_k=3,
-    )
+        companion_id=COMPANION_A,
+        k=3,
+    ))
     print(f"✓ 命中 {len(results_a)} 条")
     for i, chunk in enumerate(results_a):
         print(f"  [{i+1}] score={chunk['score']}, text={chunk['text'][:50]}...")
@@ -73,11 +95,12 @@ def test_insert_and_search():
 
     # 检索伴侣 B 的知识
     print("\n[4] 检索伴侣 B 的知识（query: 口头禅）...")
-    results_b = store.search(
+    results_b = as_chunks(store.search(
+        collection_ids=[COLLECTION_B],
         query="口头禅",
-        companion_id=2,
-        top_k=3,
-    )
+        companion_id=COMPANION_B,
+        k=3,
+    ))
     print(f"✓ 命中 {len(results_b)} 条")
     for i, chunk in enumerate(results_b):
         print(f"  [{i+1}] score={chunk['score']}, text={chunk['text'][:50]}...")
@@ -96,11 +119,12 @@ def test_companion_isolation():
 
     # 伴侣 A 查询伴侣 B 的专属内容
     print("\n[1] 伴侣 A 查询「黑咖啡」（伴侣 B 的专属内容）...")
-    results = store.search(
+    results = as_chunks(store.search(
+        collection_ids=[COLLECTION_B],
         query="黑咖啡",
-        companion_id=1,  # 伴侣 A
-        top_k=5,
-    )
+        companion_id=COMPANION_A,
+        k=5,
+    ))
     print(f"✓ 命中 {len(results)} 条")
     for chunk in results:
         assert "黑咖啡" not in chunk['text'], f"伴侣 A 不应查到伴侣 B 的内容: {chunk['text']}"
@@ -108,11 +132,12 @@ def test_companion_isolation():
 
     # 伴侣 B 查询伴侣 A 的专属内容
     print("\n[2] 伴侣 B 查询「抹茶蛋糕」（伴侣 A 的专属内容）...")
-    results = store.search(
+    results = as_chunks(store.search(
+        collection_ids=[COLLECTION_A],
         query="抹茶蛋糕",
-        companion_id=2,  # 伴侣 B
-        top_k=5,
-    )
+        companion_id=COMPANION_B,
+        k=5,
+    ))
     print(f"✓ 命中 {len(results)} 条")
     for chunk in results:
         assert "抹茶蛋糕" not in chunk['text'], f"伴侣 B 不应查到伴侣 A 的内容: {chunk['text']}"
@@ -130,17 +155,18 @@ def test_delete():
     store = MilvusStore()
 
     # 删除伴侣 A 的文档
-    print("\n[1] 删除伴侣 A 的文档 (document_id=1001)...")
-    store.delete_by_document(document_id=1001)
+    print(f"\n[1] 删除伴侣 A 的文档 (document_id={DOCUMENT_A})...")
+    store.delete_by_document(document_id=DOCUMENT_A)
     print("✓ 删除成功")
 
     # 检索验证已删除
     print("\n[2] 检索伴侣 A 的知识（query: 口头禅）...")
-    results = store.search(
+    results = as_chunks(store.search(
+        collection_ids=[COLLECTION_A],
         query="口头禅",
-        companion_id=1,
-        top_k=3,
-    )
+        companion_id=COMPANION_A,
+        k=3,
+    ))
     print(f"✓ 命中 {len(results)} 条（应为 0）")
     assert len(results) == 0, f"删除后不应再命中，实际命中 {len(results)} 条"
 
@@ -168,7 +194,9 @@ def test_rerank_comparison():
 
     # 取真实数据（复用测试 1 写入的伴侣 A/B 知识；若已删除则临时补一条）
     print(f"\n[1] rerank 开启检索（query: {query}）...")
-    with_rerank = store.search(query=query, top_k=3)
+    with_rerank = store.search_chunks(
+        query=query, collection_ids=[COLLECTION_A, COLLECTION_B], top_k=3
+    )
 
     print(f"✓ 命中 {len(with_rerank)} 条")
     for i, c in enumerate(with_rerank):
@@ -179,7 +207,9 @@ def test_rerank_comparison():
     old_value = settings.rerank_enabled
     try:
         settings.rerank_enabled = False
-        without_rerank = store.search(query=query, top_k=3)
+        without_rerank = store.search_chunks(
+            query=query, collection_ids=[COLLECTION_A, COLLECTION_B], top_k=3
+        )
     finally:
         settings.rerank_enabled = old_value
 
@@ -212,8 +242,8 @@ def cleanup():
     print("="*60)
 
     store = MilvusStore()
-    store.delete_by_collection(collection_id=101)
-    store.delete_by_collection(collection_id=102)
+    store.delete_by_collection(collection_id=COLLECTION_A)
+    store.delete_by_collection(collection_id=COLLECTION_B)
     print("✓ 清理完成")
 
 

@@ -29,7 +29,7 @@ from app.models.document import (
     KbDocument,
 )
 from app.parsers import get_parser
-from app.vectorstore.store import get_chroma_store
+from app.vectorstore.store import get_vector_store
 
 
 def new_task_id() -> str:
@@ -168,7 +168,7 @@ def run_ingest(doc_id: str) -> None:
                     meta[k] = v
             metadatas.append(meta)
 
-        store = get_chroma_store()
+        store = get_vector_store()
         store.add_chunks(coll.id, chunk_ids, texts, metadatas)
 
         # ---- 4. 回写切片元数据 ----

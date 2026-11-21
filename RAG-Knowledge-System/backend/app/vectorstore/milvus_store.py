@@ -1,10 +1,10 @@
 """Milvus 向量存储实现（2026-11-19）
 
 特性：
-- Partition Key 按伴侣隔离（companion_id）
+- Partition Key 按伴侣 UUID 字符串隔离（companion_id）
 - 插入后自动 flush（避免查询命中 0 条）
 - 查询时由 Milvus Function 服务端调用智谱 Embedding-3 向量化
-- 支持按 documentId/collectionId 精确删除
+- 对外接口与 ChromaStore 对齐，支持按 documentId/collectionId 精确删除
 """
 from typing import List, Dict, Any, Optional
 from pymilvus import (
@@ -17,6 +17,8 @@ from pymilvus import (
     FunctionType,
     utility,
 )
+from langchain_core.documents import Document
+
 from app.core.config import settings
 import logging
 
@@ -73,9 +75,11 @@ class MilvusStore:
             FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="dense", dtype=DataType.FLOAT_VECTOR, dim=2048),  # Embedding-3 2048 维
-            FieldSchema(name="companion_id", dtype=DataType.INT64, is_partition_key=True),  # Partition Key
-            FieldSchema(name="collection_id", dtype=DataType.INT64),
-            FieldSchema(name="document_id", dtype=DataType.INT64),
+            # Java / MySQL 的伴侣与知识库 ID 是 UUID 或 preset-* 字符串，不能强转 INT64。
+            # 36 字符带连字符 UUID 直接原值保存，Partition Key 同样支持 VARCHAR。
+            FieldSchema(name="companion_id", dtype=DataType.VARCHAR, max_length=36, is_partition_key=True),
+            FieldSchema(name="collection_id", dtype=DataType.VARCHAR, max_length=36),
+            FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=36),
             FieldSchema(name="chunk_index", dtype=DataType.INT32),
             FieldSchema(name="vector_id", dtype=DataType.VARCHAR, max_length=255),
         ]
@@ -116,9 +120,9 @@ class MilvusStore:
     def insert(
         self,
         texts: List[str],
-        companion_id: int,
-        collection_id: int,
-        document_id: int,
+        companion_id: str,
+        collection_id: str,
+        document_id: str,
         chunk_indices: List[int],
         vector_ids: List[str],
     ) -> int:
@@ -166,13 +170,49 @@ class MilvusStore:
 
     def search(
         self,
+        collection_ids: List[str],
         query: str,
-        companion_id: Optional[int] = None,
-        collection_ids: Optional[List[int]] = None,
+        k: int = 4,
+        companion_id: Optional[str] = None,
+        score_threshold: float = 0.0,
+    ) -> List[tuple[Document, float]]:
+        """统一检索接口，返回与 ChromaStore 一致的 (Document, 相似度) 列表。
+
+        COSINE 下 distance 即相似度，越大越相似；score_threshold 在路由层过滤。
+        """
+        chunks = self.search_chunks(
+            collection_ids=collection_ids,
+            query=query,
+            top_k=k,
+            companion_id=companion_id,
+            score_threshold=score_threshold,
+        )
+        return [
+            (
+                Document(
+                    page_content=chunk["text"],
+                    metadata={
+                        "collection_id": chunk["collection_id"],
+                        "document_id": chunk["document_id"],
+                        "chunk_index": chunk["chunk_index"],
+                        "vector_id": chunk["vector_id"],
+                        "document_title": chunk["document_title"],
+                    },
+                ),
+                chunk["score"],
+            )
+            for chunk in chunks
+        ]
+
+    def search_chunks(
+        self,
+        query: str,
+        companion_id: Optional[str] = None,
+        collection_ids: Optional[List[str]] = None,
         top_k: int = 4,
         score_threshold: float = 0.0,
     ) -> List[Dict[str, Any]]:
-        """检索切片（查询文本由 Milvus Function 向量化）
+        """原始 Milvus 检索结果（查询文本由 Milvus Function 向量化）。
 
         Args:
             query: 查询文本
@@ -185,13 +225,15 @@ class MilvusStore:
             命中的切片列表，按相似度降序
         """
         collection = self._get_collection()
+        if not collection_ids:
+            return []
 
-        # 构造过滤表达式
+        # 构造过滤表达式：字符串值必须带引号；UUID / preset-* 不能当数字表达式。
         filter_expr = []
         if companion_id is not None:
-            filter_expr.append(f"companion_id == {companion_id}")
+            filter_expr.append(f'companion_id == "{companion_id}"')
         if collection_ids:
-            ids_str = ",".join(str(cid) for cid in collection_ids)
+            ids_str = ",".join(f'"{cid}"' for cid in collection_ids)
             filter_expr.append(f"collection_id in [{ids_str}]")
 
         expr = " && ".join(filter_expr) if filter_expr else ""
@@ -243,6 +285,8 @@ class MilvusStore:
                         "document_id": hit.entity.get("document_id"),
                         "chunk_index": hit.entity.get("chunk_index"),
                         "vector_id": hit.entity.get("vector_id"),
+                        # 标题由 MySQL 元数据补齐，不在 Milvus 冗余一份中文长字符串。
+                        "document_title": None,
                     })
 
             logger.info(f"检索完成: query='{query[:50]}...', 命中 {len(chunks)} 条")
@@ -251,7 +295,31 @@ class MilvusStore:
             logger.error(f"检索失败: {e}, query='{query[:50]}...'")
             raise
 
-    def delete_by_document(self, document_id: int) -> int:
+    def add_chunks(
+        self,
+        collection_id: str,
+        chunk_ids: List[str],
+        texts: List[str],
+        metadatas: List[Dict[str, Any]],
+    ) -> int:
+        """统一入库接口：metadata 中的 companion_id / document_id 原样保留。"""
+        if not texts:
+            return 0
+        if not metadatas or not metadatas[0].get("companion_id"):
+            raise ValueError("Milvus 入库必须提供非空 companion_id")
+        if not metadatas[0].get("document_id"):
+            raise ValueError("Milvus 入库必须提供 document_id")
+
+        return self.insert(
+            texts=texts,
+            companion_id=str(metadatas[0]["companion_id"]),
+            collection_id=str(collection_id),
+            document_id=str(metadatas[0]["document_id"]),
+            chunk_indices=[int(m["chunk_index"]) for m in metadatas],
+            vector_ids=chunk_ids,
+        )
+
+    def delete_by_document(self, document_id: str) -> int:
         """按文档 ID 删除切片
 
         Args:
@@ -263,7 +331,7 @@ class MilvusStore:
         collection = self._get_collection()
 
         try:
-            expr = f"document_id == {document_id}"
+            expr = f'document_id == "{document_id}"'
             collection.delete(expr)
             collection.flush()
             logger.info(f"删除成功: document_id={document_id}")
@@ -272,7 +340,7 @@ class MilvusStore:
             logger.error(f"删除失败: {e}, document_id={document_id}")
             raise
 
-    def delete_by_collection(self, collection_id: int) -> int:
+    def delete_by_collection(self, collection_id: str) -> int:
         """按知识库 ID 删除所有切片
 
         Args:
@@ -284,7 +352,7 @@ class MilvusStore:
         collection = self._get_collection()
 
         try:
-            expr = f"collection_id == {collection_id}"
+            expr = f'collection_id == "{collection_id}"'
             collection.delete(expr)
             collection.flush()
             logger.info(f"删除成功: collection_id={collection_id}")
@@ -293,15 +361,28 @@ class MilvusStore:
             logger.error(f"删除失败: {e}, collection_id={collection_id}")
             raise
 
-    def drop_collection(self):
-        """删除整个集合（谨慎使用）"""
+    def delete_chunks(self, collection_id: str, chunk_ids: List[str]) -> None:
+        """统一删除接口：按业务 vector_id 删除，不依赖 Milvus 自增主键。"""
+        if not chunk_ids:
+            return
+        collection = self._get_collection()
+        ids_str = ",".join(f'"{vector_id}"' for vector_id in chunk_ids)
+        try:
+            collection.delete(f"vector_id in [{ids_str}]")
+            collection.flush()
+        except Exception as e:
+            logger.error(f"按 vector_id 删除失败: {e}")
+            raise
+
+    def drop_collection(self, collection_id: Optional[str] = None):
+        """统一清理接口：Milvus 是共享单集合，按知识库删除，不能 drop 整表。"""
         if not self._connected:
             self.connect()
 
         if utility.has_collection(self.collection_name):
-            utility.drop_collection(self.collection_name)
-            self._collection = None
-            logger.warning(f"集合已删除: {self.collection_name}")
+            if collection_id is None:
+                raise ValueError("Milvus 业务清理必须指定 collection_id，禁止误删共享集合")
+            self.delete_by_collection(collection_id)
 
     def close(self):
         """关闭连接"""

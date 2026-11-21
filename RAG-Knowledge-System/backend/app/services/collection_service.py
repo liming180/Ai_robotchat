@@ -68,14 +68,15 @@ class CollectionService:
 
     # ---------- 写入 ----------
     def create(self, req: CollectionCreateRequest, created_by: Optional[str] = None) -> KbCollection:
+        use_milvus = settings.vector_store_backend.lower() == "milvus"
         coll = KbCollection(
             name=req.name,
             description=req.description,
             companion_id=req.companionId,
             parser_config=req.parserConfig.model_dump() if req.parserConfig else None,
-            embedding_model=settings.embedding_model,
-            embedding_dim=settings.embedding_dim,
-            embedding_backend="hash",
+            embedding_model=settings.embedding_model if use_milvus else "simple-hash",
+            embedding_dim=settings.embedding_dim if use_milvus else 256,
+            embedding_backend=settings.vector_store_backend.lower(),
             chunk_size=req.chunkSize or settings.default_chunk_size,
             chunk_overlap=req.chunkOverlap or settings.default_chunk_overlap,
             status="active",

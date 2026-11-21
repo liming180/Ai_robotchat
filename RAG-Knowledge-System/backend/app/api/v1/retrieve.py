@@ -10,22 +10,29 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.response import ok
+from app.core.security import verify_service_token
 from app.db.database import get_db
 from app.schemas.retrieve import RetrieveRequest
 from app.services.collection_service import CollectionService
-from app.vectorstore.store import get_chroma_store
+from app.services.document_service import DocumentService
+from app.vectorstore.store import get_vector_store
 
 router = APIRouter()
 
 
-@router.post("/retrieve")
-async def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
+@router.post("/retrieve", dependencies=[Depends(verify_service_token)])
+def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
     """按角色或按知识库检索。
 
     路由规则：
     - 传了 collectionIds -> 直接检索这些库；
     - 只传 companionId  -> 查该角色绑定的所有 active 知识库；
     - 两者都没传        -> 400。
+
+    注意：这里必须是普通 def 而不是 async def。底层 pymilvus ``collection.search``
+    是同步阻塞调用，单次检索在 CPU rerank 下可达 20~40s；若写成 async def，
+    事件循环会被整段阻塞，连 ``/health`` 和登录转发都会失去响应（2026-11-21 实测）。
+    普通 def 由 FastAPI 放入线程池执行，接口契约与返回结构不变。
     """
     started = time.perf_counter()
     svc = CollectionService(db)
@@ -54,9 +61,19 @@ async def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
         else settings.retrieve_score_threshold
     )
 
-    pairs = get_chroma_store().search(coll_ids, req.query, k=top_k)
+    # Chroma 保留原三参数接口；只有 Milvus 额外传伴侣 Partition Key。
+    search_kwargs = {}
+    if settings.vector_store_backend.lower() == "milvus":
+        search_kwargs["companion_id"] = req.companionId
+    pairs = get_vector_store().search(coll_ids, req.query, k=top_k, **search_kwargs)
 
     chunks = []
+    # Milvus 不在向量字段重复存标题；按命中的 document_id 从 MySQL 批量补齐。
+    document_ids = list({(doc.metadata or {}).get("document_id") for doc, _ in pairs})
+    document_map = {
+        doc.id: doc.title
+        for doc in DocumentService(db).list_by_ids(document_ids)
+    }
     for doc, score in pairs:
         if score < threshold:
             continue
@@ -68,7 +85,7 @@ async def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
                 "content": doc.page_content,
                 "score": round(float(score), 4),
                 "documentId": meta.get("document_id"),
-                "documentTitle": meta.get("document_title"),
+                "documentTitle": meta.get("document_title") or document_map.get(meta.get("document_id")),
                 "collectionId": cid,
                 "collectionName": coll.name if coll else None,
                 "chunkIndex": meta.get("chunk_index"),

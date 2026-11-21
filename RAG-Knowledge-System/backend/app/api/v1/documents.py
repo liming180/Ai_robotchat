@@ -14,7 +14,7 @@ from app.models.document import KbDocument
 from app.schemas.document import ManualDocumentCreateRequest, DocumentUpdateRequest
 from app.services.collection_service import CollectionService
 from app.services.document_service import DocumentService
-from app.vectorstore.store import get_chroma_store
+from app.vectorstore.store import get_vector_store
 from app.workers.ingest import submit_ingest
 
 router = APIRouter()
@@ -160,7 +160,7 @@ async def update_document(
     vector_ids = svc.reset_for_reindex(doc)
     if vector_ids:
         try:
-            get_chroma_store().delete_chunks(doc.collection_id, vector_ids)
+            get_vector_store().delete_chunks(doc.collection_id, vector_ids)
         except Exception as e:
             print(f"[documents] 清理旧向量失败: {e}")
 
@@ -186,7 +186,7 @@ async def reindex_document(
     vector_ids = svc.reset_for_reindex(doc)
     if vector_ids:
         try:
-            get_chroma_store().delete_chunks(doc.collection_id, vector_ids)
+            get_vector_store().delete_chunks(doc.collection_id, vector_ids)
         except Exception as e:
             print(f"[documents] 清理旧向量失败: {e}")
 
@@ -208,7 +208,7 @@ async def delete_document(doc_id: str, db: Session = Depends(get_db)):
     vector_ids = svc.prepare_delete(doc)
     if vector_ids:
         try:
-            get_chroma_store().delete_chunks(collection_id, vector_ids)
+            get_vector_store().delete_chunks(collection_id, vector_ids)
         except Exception as e:
             print(f"[documents] 删除向量失败（元数据已清理）: {e}")
 

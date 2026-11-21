@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "description": "RAG 真实 API 回归预期。document 按文件名匹配；top1 同时检查事实标记，禁止项覆盖全部返回结果。",
+  "scorePolicy": "禁止项判定口径（2026-11-21 验收中明确化）：禁止文档分数 >= 0.5 才算有效命中，不按位置判定。原因：否定/隔离用例常出现全部命中 0.0 的并列情形，此时排名只是噪声（NEGATIVE-B-01 实测四项全 0.0）。正例的位置风险已由「top1 必须是预期文档」独立检查兜住。依据实测分界：正例 0.94~0.999，噪声 <=0.03。生产 retrieve_score_threshold 默认 0.0，本口径严于生产。若禁止项以 >=0.5 出现在任意位置，仍判 FAIL。否定用例不得把任意返回当命中；不得事后放宽预期来迁就结果。",
+  "cases": [
+    {
+      "id": "A-FACT-01",
+      "type": "fact",
+      "companion": "a",
+      "query": "Python 虚拟环境固定使用哪个版本？",
+      "expectedDocument": "01-python-env.md",
+      "expectedText": "Python 3.12.4",
+      "forbiddenDocuments": ["01-ingredient-storage.md", "02-weekly-budget.md"]
+    },
+    {
+      "id": "A-FACT-02",
+      "type": "fact",
+      "companion": "a",
+      "query": "hotfix/order-42 的并行工作区如何创建？",
+      "expectedDocument": "02-git-worktree.md",
+      "expectedText": "git worktree add",
+      "forbiddenDocuments": ["03-porridge-recipe.md", "09-life-handbook.md"]
+    },
+    {
+      "id": "A-FACT-03",
+      "type": "fact",
+      "companion": "a",
+      "query": "订单列表联合索引包含哪些列？",
+      "expectedDocument": "03-sql-index.md",
+      "expectedText": "tenant_id, order_status, created_at DESC",
+      "forbiddenDocuments": ["02-weekly-budget.md", "09-life-handbook.md"]
+    },
+    {
+      "id": "A-SEMANTIC-01",
+      "type": "semantic",
+      "companion": "a",
+      "query": "怎样复习不容易忘？",
+      "expectedDocument": "04-spaced-repetition.md",
+      "expectedText": "不同日期",
+      "forbiddenDocuments": ["05-evening-routine.md", "07-medicine-check.md"]
+    },
+    {
+      "id": "A-SEMANTIC-02",
+      "type": "semantic",
+      "companion": "a",
+      "query": "工作时总被消息打断怎么办？",
+      "expectedDocument": "05-focus-recovery.md",
+      "expectedText": "集中到一个时段",
+      "forbiddenDocuments": ["06-desk-posture.md", "07-medicine-check.md"]
+    },
+    {
+      "id": "A-SEMANTIC-03",
+      "type": "semantic",
+      "companion": "a",
+      "query": "怎么避免同类问题反复踩坑？",
+      "expectedDocument": "06-error-journal.md",
+      "expectedText": "改变过判断的节点",
+      "forbiddenDocuments": ["07-medicine-check.md", "05-evening-routine.md"]
+    },
+    {
+      "id": "A-SEMANTIC-04",
+      "type": "semantic",
+      "companion": "a",
+      "query": "看完书却讲不明白，怎样检验理解？",
+      "expectedDocument": "07-reading-notes.md",
+      "expectedText": "暂时移开原文",
+      "forbiddenDocuments": ["07-medicine-check.md", "05-evening-routine.md"]
+    },
+    {
+      "id": "A-INTERFERENCE-01",
+      "type": "interference",
+      "companion": "a",
+      "query": "使用偏好里代码示例用什么框架和数据库？",
+      "expectedDocument": "08-preferences.md",
+      "expectedText": "FastAPI 和 PostgreSQL",
+      "forbiddenDocuments": ["09-life-handbook.md", "03-porridge-recipe.md"]
+    },
+    {
+      "id": "B-INTERFERENCE-01",
+      "type": "interference",
+      "companion": "b",
+      "query": "使用偏好里饭量和时间怎么记录？",
+      "expectedDocument": "08-preferences.md",
+      "expectedText": "克或家用量杯",
+      "forbiddenDocuments": ["09-programming-guide.md", "03-sql-index.md"]
+    },
+    {
+      "id": "A-LONG-01",
+      "type": "long",
+      "companion": "a",
+      "query": "课程缓存键格式和过期时间是什么？",
+      "expectedDocument": "09-programming-guide.md",
+      "expectedText": "30 分钟",
+      "forbiddenDocuments": ["04-spaced-repetition.md", "02-weekly-budget.md"]
+    },
+    {
+      "id": "A-LONG-02",
+      "type": "long",
+      "companion": "a",
+      "query": "测试环境每周什么时候发布？",
+      "expectedDocument": "09-programming-guide.md",
+      "expectedText": "每周二和周四的 14:00 至 16:00",
+      "forbiddenDocuments": ["05-evening-routine.md", "09-life-handbook.md"]
+    },
+    {
+      "id": "A-LONG-03",
+      "type": "long",
+      "companion": "a",
+      "query": "发布健康检查失败后怎么回滚？",
+      "expectedDocument": "09-programming-guide.md",
+      "expectedText": "连续三次失败",
+      "forbiddenDocuments": ["06-error-journal.md", "09-life-handbook.md"]
+    },
+    {
+      "id": "B-FACT-01",
+      "type": "fact",
+      "companion": "b",
+      "query": "北豆腐冷藏保存多久，温度多少？",
+      "expectedDocument": "01-ingredient-storage.md",
+      "expectedText": "24 小时",
+      "forbiddenDocuments": ["01-python-env.md", "03-sql-index.md"]
+    },
+    {
+      "id": "B-FACT-02",
+      "type": "fact",
+      "companion": "b",
+      "query": "本周两人的食材预算是多少？",
+      "expectedDocument": "02-weekly-budget.md",
+      "expectedText": "420 元",
+      "forbiddenDocuments": ["03-sql-index.md", "09-programming-guide.md"]
+    },
+    {
+      "id": "B-FACT-03",
+      "type": "fact",
+      "companion": "b",
+      "query": "两人份南瓜小米粥的小米、南瓜和水量是多少？",
+      "expectedDocument": "03-porridge-recipe.md",
+      "expectedText": "小米 80 克",
+      "forbiddenDocuments": ["02-git-worktree.md", "09-programming-guide.md"]
+    },
+    {
+      "id": "B-SEMANTIC-01",
+      "type": "semantic",
+      "companion": "b",
+      "query": "叶菜洗完放不久就坏，怎么处置？",
+      "expectedDocument": "04-vegetable-storage.md",
+      "expectedText": "准备烹调前才清洗",
+      "forbiddenDocuments": ["04-spaced-repetition.md", "07-reading-notes.md"]
+    },
+    {
+      "id": "B-SEMANTIC-02",
+      "type": "semantic",
+      "companion": "b",
+      "query": "躺下还很精神，睡前环境怎么调整？",
+      "expectedDocument": "05-evening-routine.md",
+      "expectedText": "光线逐步变暗",
+      "forbiddenDocuments": ["05-focus-recovery.md", "06-error-journal.md"]
+    },
+    {
+      "id": "B-SEMANTIC-03",
+      "type": "semantic",
+      "companion": "b",
+      "query": "伏案久了肩颈紧，应该怎么调整？",
+      "expectedDocument": "06-desk-posture.md",
+      "expectedText": "双脚稳定落点",
+      "forbiddenDocuments": ["05-focus-recovery.md", "06-error-journal.md"]
+    },
+    {
+      "id": "B-SEMANTIC-04",
+      "type": "semantic",
+      "companion": "b",
+      "query": "家里储备用品外观很像，怎么避免混用？",
+      "expectedDocument": "07-medicine-check.md",
+      "expectedText": "有效成分",
+      "forbiddenDocuments": ["06-error-journal.md", "07-reading-notes.md"]
+    },
+    {
+      "id": "B-LONG-01",
+      "type": "long",
+      "companion": "b",
+      "query": "鸡蛋和鲜牛奶应放冰箱门架吗？",
+      "expectedDocument": "09-life-handbook.md",
+      "expectedText": "不放鲜牛奶与鸡蛋",
+      "forbiddenDocuments": ["01-python-env.md", "03-sql-index.md"]
+    },
+    {
+      "id": "B-LONG-02",
+      "type": "long",
+      "companion": "b",
+      "query": "家庭牙科复诊通常安排在什么时候？",
+      "expectedDocument": "09-life-handbook.md",
+      "expectedText": "每月第二个周六上午 9:30",
+      "forbiddenDocuments": ["09-programming-guide.md", "02-weekly-budget.md"]
+    },
+    {
+      "id": "B-LONG-03",
+      "type": "long",
+      "companion": "b",
+      "query": "家政上门是几点，临时改预约由谁处理？",
+      "expectedDocument": "09-life-handbook.md",
+      "expectedText": "原预约人负责电话取消",
+      "forbiddenDocuments": ["09-programming-guide.md", "06-error-journal.md"]
+    },
+    {
+      "id": "ISOLATION-A-01",
+      "type": "isolation",
+      "companion": "a",
+      "query": "南瓜小米粥具体怎么做？",
+      "expectNoDocument": true,
+      "forbiddenDocuments": ["03-porridge-recipe.md", "09-life-handbook.md", "01-ingredient-storage.md"]
+    },
+    {
+      "id": "ISOLATION-B-01",
+      "type": "isolation",
+      "companion": "b",
+      "query": "FastAPI 和 PostgreSQL 的使用偏好是什么？",
+      "expectNoDocument": true,
+      "forbiddenDocuments": ["08-preferences.md", "09-programming-guide.md", "03-sql-index.md"]
+    },
+    {
+      "id": "NEGATIVE-A-01",
+      "type": "negative",
+      "companion": "a",
+      "query": "公司火星基地电梯的备用密码是多少？",
+      "expectNoRelevantDocument": true,
+      "forbiddenDocuments": ["08-preferences.md"]
+    },
+    {
+      "id": "NEGATIVE-B-01",
+      "type": "negative",
+      "companion": "b",
+      "query": "南极科考站量子发动机怎么换滤芯？",
+      "expectNoRelevantDocument": true,
+      "forbiddenDocuments": ["09-life-handbook.md"]
+    }
+  ]
+}

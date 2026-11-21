@@ -43,6 +43,17 @@ class DocumentService:
             .first()
         )
 
+    def list_by_ids(self, doc_ids: List[Optional[str]]) -> List[KbDocument]:
+        """批量取检索命中的文档标题；过滤空值与已删除文档。"""
+        ids = [doc_id for doc_id in doc_ids if doc_id]
+        if not ids:
+            return []
+        return (
+            self.db.query(KbDocument)
+            .filter(KbDocument.id.in_(ids), KbDocument.deleted == 0)
+            .all()
+        )
+
     def list_chunks(self, doc_id: str) -> List[KbChunk]:
         return (
             self.db.query(KbChunk)

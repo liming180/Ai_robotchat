@@ -29,8 +29,18 @@ from app.core.response import fail, ok  # noqa: E402
 async def lifespan(app: FastAPI):
     print(f"[RAG-KB] 启动中 ... env={settings.app_env} port={settings.app_port}")
     print(f"[RAG-KB] 元数据库: {settings.database_url.split('@')[-1]}")
-    print(f"[RAG-KB] 向量库目录: {settings.chroma_persist_dir}")
+    print(f"[RAG-KB] 向量库后端: {settings.vector_store_backend}")
     print(f"[RAG-KB] 允许的上传格式: {settings.allowed_extensions_list}")
+
+    # 鉴权自检：密钥与 Java 不同源时直接失败，不带着错密钥静默运行。
+    from app.core.security import verify_secret_alignment
+
+    fingerprint = verify_secret_alignment()
+    print(f"[RAG-KB] JWT_SECRET 指纹: {fingerprint}（仅指纹，不打印原值）")
+    if settings.service_token:
+        print("[RAG-KB] SERVICE_TOKEN 已配置，/retrieve 将校验 X-Service-Token")
+    else:
+        print("[RAG-KB] [WARN] SERVICE_TOKEN 未配置，/retrieve 不校验（仅适合本地开发）")
     yield
     print("[RAG-KB] 已关闭")
 
@@ -44,7 +54,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # 从通配 * 收紧到显式来源（默认 RAG 管理前端 3001）。
+    # allow_credentials=True 时浏览器禁止 *，这也是必须显式列出的原因之一。
+    allow_origins=[
+        origin.strip()
+        for origin in settings.cors_origins.split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

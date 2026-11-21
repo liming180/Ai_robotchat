@@ -30,7 +30,9 @@ async def login(payload: LoginRequest):
     """转发 Java 8081 登录，成功返回 {accessToken, refreshToken, tokenType, user}。"""
     url = f"{settings.java_auth_url.rstrip('/')}/api/v1/auth/login"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        # 本机服务间请求不走终端继承的 HTTP 代理；代理可能把 localhost 请求
+        # 直接转成 502，且不会留下 Java 请求日志。
+        async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
             resp = await client.post(url, json={"email": payload.email, "password": payload.password})
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"登录服务不可达: {url}（{type(e).__name__}）")
@@ -40,6 +42,10 @@ async def login(payload: LoginRequest):
     if resp.status_code == 200 and body.get("code") == 200:
         return ok(body.get("data"), message=body.get("message") or "登录成功")
 
-    # 登录失败（密码错误/账号不存在等）统一按 401 返回，避免暴露服务端细节
+    # 只有 Java 明确的鉴权拒绝才映射 401；上游 5xx 保留 502，
+    # 避免把服务故障误报为密码错误。
+    if resp.status_code >= 500:
+        message = body.get("message") or f"Java 登录服务异常（HTTP {resp.status_code}）"
+        raise HTTPException(status_code=502, detail=message)
     message = body.get("message") or f"登录失败（Java HTTP {resp.status_code}）"
     raise HTTPException(status_code=401, detail=message)

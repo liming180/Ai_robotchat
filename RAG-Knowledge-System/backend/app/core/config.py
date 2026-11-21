@@ -5,6 +5,7 @@
 
 from typing import List
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -52,9 +53,9 @@ class Settings(BaseSettings):
 
     # ---- Embedding ----
     # Chroma 旧后端：本地哈希向量（256 维）
-    # Milvus 新后端：由 Milvus Function 服务端调用智谱 Embedding-3（2048 维），此处不配置
-    embedding_model: str = "simple-hash"
-    embedding_dim: int = 256
+    # 默认值对应当前 Milvus 后端；Chroma 回退时由 CollectionService 固定写旧配置。
+    embedding_model: str = "embedding-3"
+    embedding_dim: int = 2048
 
     # ---- 上传 ----
     upload_dir: str = "./storage/uploads"
@@ -69,9 +70,21 @@ class Settings(BaseSettings):
     retrieve_top_k: int = 4
     retrieve_score_threshold: float = 0.0
 
-    # ---- 主服务 JWT（二期启用）----
-    jwt_secret_key: str = "change-me-in-production"
+    # ---- 主服务 JWT（Phase 2 鉴权强制化，2026-11-21）----
+    # 必须与 Java 同源：只读用户级环境变量 JWT_SECRET，8002 不单独设值。
+    # 显式指定 validation_alias，避免按字段名自动匹配出 JWT_SECRET_KEY 等
+    # 历史变体（曾因此读到一个 64 位旧密钥，两侧不同源却无报错）。
+    # 默认空串 → 启动自检直接失败，不会带错密钥静默运行。
+    jwt_secret_key: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET", "jwt_secret_key"))
     jwt_algorithm: str = "HS256"
+
+    # ---- 服务间共享密钥（5000 → 8002 检索）----
+    # 留空则不校验（仅本地开发）；与 backend/.env 的 SERVICE_TOKEN 同值。
+    service_token: str = ""
+
+    # ---- CORS ----
+    # 逗号分隔的允许来源，默认只放行 RAG 管理前端 3001。
+    cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
 
     # ---- Java 业务后端（登录转发用，2026-11-17 前端方案）----
     java_auth_url: str = "http://localhost:8081"

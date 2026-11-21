@@ -35,6 +35,9 @@ class LLMConfig:
     # ── RAG 知识库服务（8002） ──
     RAG_SERVICE_URL: str = "http://localhost:8002"
     RAG_TIMEOUT: int = 3  # 秒
+    # 服务间共享密钥：与 8002 的 SERVICE_TOKEN 同值，随 /retrieve 以
+    # X-Service-Token 头发送。留空则不发送（8002 侧也未配置时不校验）。
+    SERVICE_TOKEN: str = ""
 
     def __post_init__(self):
         """兜底：未显式传值时，从环境变量补齐关键配置。
@@ -75,6 +78,8 @@ class LLMConfig:
             self.RAG_SERVICE_URL = _os.getenv("RAG_SERVICE_URL").strip()
         if _os.getenv("RAG_TIMEOUT"):
             self.RAG_TIMEOUT = int(_os.getenv("RAG_TIMEOUT"))
+        if not str(self.SERVICE_TOKEN or "").strip():
+            self.SERVICE_TOKEN = _os.getenv("SERVICE_TOKEN", "").strip()
 
     @classmethod
     def from_env(cls):
