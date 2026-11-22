@@ -2,6 +2,8 @@
   "version": 1,
   "description": "RAG 真实 API 回归预期。document 按文件名匹配；top1 同时检查事实标记，禁止项覆盖全部返回结果。",
   "scorePolicy": "禁止项判定口径（2026-11-21 验收中明确化）：禁止文档分数 >= 0.5 才算有效命中，不按位置判定。原因：否定/隔离用例常出现全部命中 0.0 的并列情形，此时排名只是噪声（NEGATIVE-B-01 实测四项全 0.0）。正例的位置风险已由「top1 必须是预期文档」独立检查兜住。依据实测分界：正例 0.94~0.999，噪声 <=0.03。生产 retrieve_score_threshold 默认 0.0，本口径严于生产。若禁止项以 >=0.5 出现在任意位置，仍判 FAIL。否定用例不得把任意返回当命中；不得事后放宽预期来迁就结果。",
+  "scorePolicyHybrid": "hybrid 模式（2026-11-22，kb_chunks_hybrid + BM25 + RRF）分数是名次融合分，不是相似度：0.5 阈值不成立，阈值随尺度重定，实测依据见 docs/BM25混合检索验收报告.md。hybrid 模式判定：正例/对照用例看 top1 命中；禁止项按 RRF 实测阈值判定；分数只展示，不与 dense 逐条比对。",
+  "typeNotes": "contrast = 对照用例（2026-11-22 新增）：query 使用文档中的低频精确术语，考察 BM25 对 dense 的补充。判定同正例（top1 命中 + 事实标记）；dense 模式下若同样命中则如实记「无增量」。",
   "cases": [
     {
       "id": "A-FACT-01",
@@ -232,6 +234,26 @@
       "query": "南极科考站量子发动机怎么换滤芯？",
       "expectNoRelevantDocument": true,
       "forbiddenDocuments": ["09-life-handbook.md"]
+    },
+    {
+      "id": "A-CONTRAST-01",
+      "type": "contrast",
+      "companion": "a",
+      "query": "hotfix/order-42 分支的并行工作区怎么建",
+      "expectedDocument": "02-git-worktree.md",
+      "expectedText": "git worktree add",
+      "forbiddenDocuments": ["03-porridge-recipe.md", "09-life-handbook.md"],
+      "contrastNote": "低频精确术语 hotfix/order-42：语义检索容易把它当一般「并行/分支」问题，BM25 能按字面命中。A-FACT-02 用同一事实但更口语的措辞，两条一起看增量。"
+    },
+    {
+      "id": "A-CONTRAST-02",
+      "type": "contrast",
+      "companion": "a",
+      "query": "EXPLAIN ANALYZE 上线前重点看哪些指标",
+      "expectedDocument": "03-sql-index.md",
+      "expectedText": "实际访问路径",
+      "forbiddenDocuments": ["02-weekly-budget.md", "09-life-handbook.md"],
+      "contrastNote": "英文命令符号 EXPLAIN ANALYZE 是 03 文档独有低频串：dense 对纯符号串召回弱，BM25 可按字面命中。"
     }
   ]
 }

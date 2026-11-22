@@ -70,6 +70,27 @@ class Settings(BaseSettings):
     retrieve_top_k: int = 4
     retrieve_score_threshold: float = 0.0
 
+    # ---- BM25 混合检索（2026-11-22，灰度默认关闭）----
+    # 开启后读写都切到 hybrid 集合：dense(COSINE) + sparse(BM25) 两路召回，
+    # 由 Milvus 侧 RRFRanker 合并名次，**不再叠加 TEI 精排**。
+    # 原因：Milvus 2.6 + PyMilvus 3.0.2 的 hybrid_search 只接受一个 ranker
+    # （RRF 与 RERANK Function 不能串联，function_chains 客户端直接拒绝）。
+    # 关闭时行为与接入前逐字节一致（仍走 kb_chunks + 可选 TEI）。
+    hybrid_search_enabled: bool = False
+    # 灰度集合与现有 kb_chunks 并存：切换开关即可回滚，数据零风险。
+    hybrid_collection_name: str = "kb_chunks_hybrid"
+    # RRF 名次融合常数（Milvus 默认 60）
+    rrf_k: int = 60
+    # BM25 参数：k1 词频饱和（推荐 1.2~2.0），b 长度归一（0~1）
+    bm25_k1: float = 1.2
+    bm25_b: float = 0.75
+    # 单路召回候选数：两路各取该数再交给 RRF 合并，最终仍只返回 topK。
+    # 不做二次精排，耗时由该值决定（实测 0.3~1.1s），不再是 TEI 的 9~44s。
+    hybrid_candidate_k: int = 10
+    # hybrid 模式的分数下限。注意：RRF 分数是名次融合值（实测 0.015~0.033），
+    # 与 COSINE / TEI 完全不同尺度，不得沿用 0~1 的语义阈值。
+    hybrid_score_threshold: float = 0.0
+
     # ---- 主服务 JWT（Phase 2 鉴权强制化，2026-11-21）----
     # 必须与 Java 同源：只读用户级环境变量 JWT_SECRET，8002 不单独设值。
     # 显式指定 validation_alias，避免按字段名自动匹配出 JWT_SECRET_KEY 等

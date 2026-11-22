@@ -3,12 +3,22 @@
 用法（在 RAG-Knowledge-System/backend 下执行）：
   # 密码只从进程环境读取，禁止作为命令行参数或写入文件
   $env:RAG_TEST_PASSWORD = '<本次测试密码>'
-  python -I tests/rag_regression/run_regression.py --setup
+  python -I tests/rag_regression/run_regression.py --setup --mode dense \
+      --state-file D:\Ai_robotchat\logs\rag-regression-state.json
 
 后续只跑预期结果表：
-  python -I tests/rag_regression/run_regression.py --verify-only --state-file <临时状态文件>
+  python -I tests/rag_regression/run_regression.py --verify-only --mode dense \
+      --state-file <临时状态文件>
 
-脚本只操作名称带「RAG回归」的两个伴侣及对应知识库，不动已有业务数据。
+BM25 混合检索（2026-11-22，灰度）：8002 以 HYBRID_SEARCH_ENABLED=true 启动后，
+用 --mode hybrid 走另一套伴侣/知识库（名称带 -HYBRID），数据导入到 kb_chunks_hybrid：
+  python -I tests/rag_regression/run_regression.py --setup --mode hybrid \
+      --state-file D:\Ai_robotchat\logs\rag-regression-state-hybrid.json
+
+脚本只操作名称带「RAG回归」的伴侣及对应知识库，不动已有业务数据。
+两种模式的判定口径不同，见 README「判定标准」：
+- dense ：top1 是预期文档且含事实；禁止项按 TEI/COSINE 分数（0~1）判定
+- hybrid：同样 top1 命中，但禁止项按 RRF 名次分判定；分数只展示、不逐条比对
 """
 from __future__ import annotations
 
@@ -32,10 +42,32 @@ COMPANIONS = {
     "a": {"name": "RAG回归-学习助手", "domain": "编程、学习方法与工程实践"},
     "b": {"name": "RAG回归-生活管家", "domain": "饮食、居家日程与健康生活"},
 }
+HYBRID_SUFFIX = "-HYBRID"
 
 # 禁止项判定的分数口径：非 top1 位置需要达到该分数才算「有效命中」。
-# 依据：实测正例 0.94~0.999、噪声 ≤0.03；生产 retrieve_score_threshold 默认 0.0（更宽松）。
+# dense（COSINE/TEI，0~1）：实测正例 0.94~0.999、噪声 ≤0.03；生产 retrieve_score_threshold
+# 默认 0.0（更宽松）。
 FORBIDDEN_HIT_SCORE = 0.5
+# hybrid（RRF 名次分，0.01~0.04 量级）：**阈值随尺度重定**，不能沿用 0.5。
+# 2026-11-22 实测（28 条用例、112 条返回）呈两档分布、中间无过渡值：
+#   单路命中档 0.0156~0.0164；双路同时命中档 0.0288~0.0328。
+# 取 0.0195 落在两档之间，语义是「两路都召回才算有效命中」，
+# **不是**「相关/不相关」的语义分界（RRF 尺度给不出后者，详见验收报告）。
+# 实测依据：禁止项 NEGATIVE-B-01 实测最高 0.0164（仅 dense 单路弱命中），判通过。
+FORBIDDEN_HIT_SCORE_RRF = 0.0195
+
+# 各模式下服务端应返回的分数尺度标签，用来证明 8002 确实跑在预期模式上
+# （dense 允许 cosine 或 tei：取决于 RERANK_ENABLED）。
+ALLOWED_SCORE_SCALES = {"dense": {"cosine", "tei"}, "hybrid": {"rrf"}}
+
+
+def companion_names(mode: str) -> dict[str, dict[str, str]]:
+    """按模式给伴侣/知识库名加后缀，两套资产互不覆盖。"""
+    suffix = HYBRID_SUFFIX if mode == "hybrid" else ""
+    return {
+        key: {**info, "name": info["name"] + suffix}
+        for key, info in COMPANIONS.items()
+    }
 
 
 def _read_service_token() -> str:
@@ -213,9 +245,14 @@ def verify_retrieve(
     api: Api,
     cases: list[dict[str, Any]],
     state: dict[str, Any],
+    mode: str = "dense",
     on_result=None,
 ) -> list[dict[str, Any]]:
+    forbidden_threshold = (
+        FORBIDDEN_HIT_SCORE_RRF if mode == "hybrid" else FORBIDDEN_HIT_SCORE
+    )
     results = []
+    expected_scales = ALLOWED_SCORE_SCALES[mode]
     for case in cases:
         data, retry_record = _retrieve_with_retry(api, {
             # topK=4 与生产 5000 链路（langchain_client.py 的 topK:4）对齐，不是降低标准。
@@ -247,25 +284,31 @@ def verify_retrieve(
             (expected_name.startswith("09-") and "手册" in (c.get("documentTitle") or ""))
         )]
         failures = []
-        if case["type"] in ("fact", "semantic", "interference", "long"):
+        # 模式自证：8002 返回的 scoreScale 必须在预期集合内，否则说明服务端跑的是另一条路径
+        # （比如开了 hybrid 却仍在 dense 判定，或 RERANK_ENABLED 状态与预期不符），
+        # 此时所有分数结论都不可信，直接判该条失败而不是静默按错的尺度比较。
+        score_scale = data.get("scoreScale")
+        if score_scale not in expected_scales:
+            failures.append(
+                f"分数尺度不符：期望 {sorted(expected_scales)}，实际 {score_scale}"
+            )
+        if case["type"] in ("fact", "semantic", "interference", "long", "contrast"):
             if not top:
                 failures.append("零命中")
             elif not matched or top.get("documentId") != matched[0].get("documentId"):
                 failures.append(f"top1 不是预期文档：{case['expectedDocument']}")
             elif case["expectedText"] not in top.get("content", ""):
                 failures.append(f"top1 不含预期事实：{case['expectedText']}")
-        # 禁止项口径（2026-11-21 验收中明确化）：禁止文档分数 ≥ 0.5 才算有效命中。
-        # 不按位置判定：否定/隔离用例常出现全部命中 0.0 的并列情形，此时排名只是噪声，
-        # 位置不携带置信信息（NEGATIVE-B-01 实测 top1 0.0、四项全 0.0）。
-        # 正例的位置风险已由上方「top1 必须是预期文档」独立兜住。
-        # 实测分界：正例 0.94~0.999，噪声 ≤0.03；生产 retrieve_score_threshold 默认 0.0，
-        # 本口径严于生产，报告须注明。
+        # 禁止项口径：禁止文档分数 ≥ 模式阈值才算有效命中。不按位置判定：否定/隔离
+        # 用例常出现全部命中同分的并列情形，此时排名只是噪声，位置不携带置信信息。
+        # dense 阈值 0.5 依据正例 0.94~0.999 / 噪声 ≤0.03；
+        # hybrid 阈值随 RRF 尺度重定（见 FORBIDDEN_HIT_SCORE_RRF 与验收报告实测数据）。
         for chunk in chunks:
             for forbidden in case.get("forbiddenDocuments", []):
                 if Path(forbidden).stem not in (chunk.get("documentTitle") or ""):
                     continue
                 score = float(chunk.get("score") or 0.0)
-                if score >= FORBIDDEN_HIT_SCORE:
+                if score >= forbidden_threshold:
                     failures.append(f"命中禁止文档：{forbidden}（分数 {score}）")
             if case.get("expectNoDocument") and case["companion"] == "a":
                 if any(word in chunk.get("content", "") for word in ("南瓜小米粥", "北豆腐", "家庭预约")):
@@ -277,12 +320,17 @@ def verify_retrieve(
             "id": case["id"], "type": case["type"], "query": case["query"],
             "expectedDocument": case.get("expectedDocument"),
             "top1": top, "allHits": [{"documentTitle": c.get("documentTitle"), "chunkIndex": c.get("chunkIndex"), "score": c.get("score"), "content": c.get("content")} for c in chunks],
-            "elapsedMs": data["elapsedMs"], "passed": not failures, "failures": failures,
+            "elapsedMs": data["elapsedMs"], "scoreScale": score_scale,
+            "passed": not failures, "failures": failures,
             "retry": retry_record,
-            "note": "否定用例按分数判定：全部 < 0.5 视为无有效命中（通过），不按返回条数或位置",
+            "note": f"{mode} 模式：禁止项阈值 {forbidden_threshold}；分数只展示不参与逐条比对",
         })
         retry_tag = " [重试1次]" if retry_record["retried"] else ""
-        print(f"{case['id']}: {'PASS' if not failures else 'FAIL'} top1={top.get('score') if top else '-'} {top.get('documentTitle') if top else '-'} {failures}{retry_tag}")
+        print(
+            f"{case['id']}: {'PASS' if not failures else 'FAIL'} "
+            f"top1={top.get('score') if top else '-'} {top.get('documentTitle') if top else '-'} "
+            f"{failures}{retry_tag}"
+        )
         if on_result:
             on_result(results[-1])
     return results
@@ -292,6 +340,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--setup", action="store_true", help="登录、建两个伴侣和知识库并导入 18 篇文档")
     parser.add_argument("--verify-only", action="store_true", help="只执行预期结果表")
+    parser.add_argument(
+        "--mode", choices=["dense", "hybrid"], default="dense",
+        help="dense=kb_chunks 单路（默认）；hybrid=kb_chunks_hybrid + BM25（需 8002 开 HYBRID_SEARCH_ENABLED）",
+    )
     parser.add_argument("--state-file", type=Path, required=True, help="临时运行 ID 与结果；不含凭据")
     args = parser.parse_args()
     if not args.setup and not args.verify_only:
@@ -305,8 +357,14 @@ def main() -> None:
     state = {"runId": uuid.uuid4().hex, "userId": user_id, "companions": {}}
     if args.verify_only:
         state = json.loads(args.state_file.read_text(encoding="utf-8"))
+        if state.get("mode", "dense") != args.mode:
+            raise SystemExit(
+                f"状态文件是 {state.get('mode', 'dense')} 模式建的，与 --mode {args.mode} 不符；"
+                "换用对应模式的状态文件，或用新路径重跑 --setup"
+            )
     else:
-        for key, info in COMPANIONS.items():
+        state["mode"] = args.mode
+        for key, info in companion_names(args.mode).items():
             existing = [c for c in api.java("GET", "/companions") if c["name"] == info["name"]]
             if existing:
                 raise AssertionError(f"已有同名回归伴侣，为避免误删停止：{info['name']}")
@@ -334,7 +392,8 @@ def main() -> None:
         state["results"].append(result)
         args.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    verify_retrieve(api, cases, state, on_result=_save_one)
+    # 只跑目标用例，--setup（建库导入）与 --verify-only（27 条检索）互不混合。
+    verify_retrieve(api, cases, state, mode=args.mode, on_result=_save_one)
     args.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"完成：{sum(r['passed'] for r in state['results'])}/{len(state['results'])}；结果不含账号密码或 token")
 

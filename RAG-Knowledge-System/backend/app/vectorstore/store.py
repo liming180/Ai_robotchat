@@ -24,6 +24,9 @@ def collection_name_of(collection_id: str) -> str:
 class ChromaStore:
     """Chroma 封装（按 collection 懒加载 + 进程内缓存）。"""
 
+    # 与 MilvusStore 对齐：1 - distance 即相似度（0~1），供路由层标注分数尺度。
+    score_scale = "cosine"
+
     def __init__(self, persist_dir: Optional[str] = None, embeddings=None):
         import os
         import threading
@@ -140,7 +143,8 @@ class ChromaStore:
 # ========== 统一接口（根据配置切换后端） ==========
 
 _chroma_store: Optional[ChromaStore] = None
-_milvus_store: Optional[Any] = None  # MilvusStore 实例，延迟导入
+_milvus_store: Optional[Any] = None  # MilvusStore（dense）实例，延迟导入
+_milvus_hybrid_store: Optional[Any] = None  # MilvusStore（hybrid）实例，延迟导入
 
 
 def get_chroma_store() -> ChromaStore:
@@ -151,9 +155,18 @@ def get_chroma_store() -> ChromaStore:
     return _chroma_store
 
 
-def get_milvus_store():
-    """获取全局 MilvusStore 单例。"""
-    global _milvus_store
+def get_milvus_store(hybrid: bool = False):
+    """获取 MilvusStore 实例：细粒度单例（dense / hybrid 各一份）。
+
+    hybrid 切换是进程级配置（HYBRID_SEARCH_ENABLED），但两个实例持有不同集合名，
+    互不干扰；同时存在也只会有一个被 get_vector_store() 选中。
+    """
+    global _milvus_store, _milvus_hybrid_store
+    if hybrid:
+        if _milvus_hybrid_store is None:
+            from app.vectorstore.milvus_store import MilvusStore
+            _milvus_hybrid_store = MilvusStore(hybrid=True)
+        return _milvus_hybrid_store
     if _milvus_store is None:
         from app.vectorstore.milvus_store import MilvusStore
         _milvus_store = MilvusStore()
@@ -163,13 +176,16 @@ def get_milvus_store():
 def get_vector_store():
     """根据配置获取向量存储实例（统一入口）。
 
+    HYBRID_SEARCH_ENABLED=true 时读写都走 hybrid 集合（dense + BM25，RRF 合并）；
+    默认 false，生产路径仍是 kb_chunks 单路 dense + 可选 TEI，行为不变。
+
     Returns:
         MilvusStore 或 ChromaStore 实例
     """
     backend = settings.vector_store_backend.lower()
 
     if backend == "milvus":
-        return get_milvus_store()
+        return get_milvus_store(hybrid=settings.hybrid_search_enabled)
     elif backend == "chroma":
         return get_chroma_store()
     else:

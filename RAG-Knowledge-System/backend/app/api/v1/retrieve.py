@@ -3,6 +3,7 @@
 主服务的 search_knowledge 工具与前端"检索测试"页共用本接口。
 """
 
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,7 @@ from app.services.collection_service import CollectionService
 from app.services.document_service import DocumentService
 from app.vectorstore.store import get_vector_store
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -49,23 +51,46 @@ def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="必须提供 companionId 或 collectionIds")
 
     if not collections:
-        return ok({"chunks": [], "elapsedMs": 0, "searchedCollections": []}, message="没有可检索的知识库")
-
+        # 尺度标记即便空结果也返回，前端不会把「无结果」误判成 dense 模式。
+        store = get_vector_store()
+        return ok(
+            {
+                "chunks": [],
+                "elapsedMs": 0,
+                "searchedCollections": [],
+                "scoreScale": getattr(store, "score_scale", "cosine"),
+            },
+            message="没有可检索的知识库",
+        )
     coll_map = {c.id: c for c in collections}
     coll_ids = list(coll_map.keys())
 
     top_k = req.topK or settings.retrieve_top_k
-    threshold = (
-        req.scoreThreshold
-        if req.scoreThreshold is not None
-        else settings.retrieve_score_threshold
-    )
+    store = get_vector_store()
+    # 分数尺度随检索模式变化：dense 是 COSINE/TEI 相似度（0~1），hybrid 是 RRF 名次分
+    # （实测 0.015~0.033）。两者不可共用阈值，也不可让调用方按 0~1 去解读 RRF 分数。
+    score_scale = getattr(store, "score_scale", "cosine")
+    if score_scale == "rrf":
+        # hybrid 模式下 scoreThreshold 的 0~1 语义不成立：客户端传来的值被显式忽略，
+        # 统一用 settings.hybrid_score_threshold（默认 0.0，不过滤）。
+        if req.scoreThreshold is not None:
+            logger.warning(
+                f"hybrid 模式忽略请求 scoreThreshold={req.scoreThreshold}（RRF 尺度非 0~1）；"
+                f"改用 hybrid_score_threshold={settings.hybrid_score_threshold}"
+            )
+        threshold = settings.hybrid_score_threshold
+    else:
+        threshold = (
+            req.scoreThreshold
+            if req.scoreThreshold is not None
+            else settings.retrieve_score_threshold
+        )
 
     # Chroma 保留原三参数接口；只有 Milvus 额外传伴侣 Partition Key。
     search_kwargs = {}
     if settings.vector_store_backend.lower() == "milvus":
         search_kwargs["companion_id"] = req.companionId
-    pairs = get_vector_store().search(coll_ids, req.query, k=top_k, **search_kwargs)
+    pairs = store.search(coll_ids, req.query, k=top_k, **search_kwargs)
 
     chunks = []
     # Milvus 不在向量字段重复存标题；按命中的 document_id 从 MySQL 批量补齐。
@@ -98,6 +123,8 @@ def retrieve(req: RetrieveRequest, db: Session = Depends(get_db)):
             "chunks": chunks,
             "elapsedMs": elapsed_ms,
             "searchedCollections": coll_ids,
+            # 新增字段：dense=cosine/tei（0~1 相似度），hybrid=rrf（名次融合分，不可当相似度）
+            "scoreScale": score_scale,
         },
         message="检索完成",
     )

@@ -15,6 +15,9 @@ class RetrieveRequest(BaseModel):
     collectionIds: Optional[List[str]] = None
     query: str = Field(..., min_length=1)
     topK: Optional[int] = Field(None, ge=1, le=20)
+    # 仅在 dense 模式生效（COSINE/TEI 都是 0~1 相似度）。
+    # hybrid 模式（HYBRID_SEARCH_ENABLED=true）下分数是 RRF 名次融合分，本字段被忽略，
+    # 由服务端 settings.hybrid_score_threshold 决定下限。
     scoreThreshold: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
@@ -32,3 +35,5 @@ class RetrieveResponse(BaseModel):
     chunks: List[RetrievedChunk]
     elapsedMs: int
     searchedCollections: List[str] = []
+    # cosine / tei：0~1 相似度；rrf：名次融合分（0.015~0.033 量级），不可当相似度解读
+    scoreScale: str = "cosine"

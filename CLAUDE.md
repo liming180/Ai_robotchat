@@ -86,6 +86,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - **RAG 双路（P1-1 已完成）**：`search_knowledge` 优先调 8002 `/api/v1/kb/retrieve`（`{companionId, query, topK}`），**只在超时/异常/5xx 时回落本地 RAGStore**；8002 返回空 chunks 是正常业务结果，不回落。有 `companionId` 时每次请求构建新 agent（闭包绑定，并发安全），无则复用单例。
 - **工具调用可观测（2026-11-22）**：`search_user_memory` / `search_knowledge` 入口打印 `[tool] ...` 到 stdout（`flush=True`），用于工具选择回归实测。App logger 默认 WARNING 级，不要用 `logger.info`（会丢）。
 - **Phase 4 聊天集成验收（2026-11-22）**：功能链路通过（前端开关、3000→5000→8002→Milvus、服务间 token、工具选择双向、8002 停机/空库/3s 超时降级）；性能仍不达标，生产 3s 超时必然回落本地，详见 `docs/RAG聊天集成验收报告.md`。
+- **BM25 混合检索（2026-11-22，默认关闭）**：`HYBRID_SEARCH_ENABLED=false` 时仍走 `kb_chunks` dense + TEI，行为不变。开启（需重启 8002）后读写切到 `kb_chunks_hybrid`（`text` 字段 chinese analyzer + `sparse` BM25），检索为 dense + BM25 两路 -> `RRFRanker(k=60)`，**不做 TEI 精排**（Milvus `hybrid_search` 只接受一个 ranker，RRF 与 RERANK 无法串联）。实测：dense 26/26 零差异；hybrid 26/28（2 条语义回退，根因是 BM25 噪声经 RRF 放大）；性能 p50 20.6s→0.23s；BM25 增量未证实，故**保持默认关闭**。RRF 分数是名次融合值（0.015~0.033），不可当相似度或阈值用；`/retrieve` 响应新增 `scoreScale`。详见 `docs/BM25混合检索验收报告.md`。
 - **工具选择规则（2026-11-15 修复）**：用户本人记忆/聊天历史 → `search_user_memory`；伴侣角色喜好/设定/背景 → `search_knowledge`。改提示词时双向都要测，避免把偏见从一侧翻到另一侧。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
@@ -140,6 +141,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - `docs/03-API接口文档.md` — API 规范
 - `docs/LANGCHAIN_MIGRATION_GUIDE.md` — LangChain 集成与 RAG 说明，但该文件为 GBK 编码，按 UTF-8 读取会乱码，需转码后再读
 - `docs/RAG聊天集成验收报告.md` — Phase 4 聊天集成验收（功能通过、性能不通过、环境终态）
+- `docs/BM25混合检索验收报告.md` — BM25+RRF 灰度验收（技术可行、dense 零差异、质量未达启用、RRF 阈值实测）
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
