@@ -87,7 +87,8 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - **工具调用可观测（2026-11-22）**：`search_user_memory` / `search_knowledge` 入口打印 `[tool] ...` 到 stdout（`flush=True`），用于工具选择回归实测。App logger 默认 WARNING 级，不要用 `logger.info`（会丢）。
 - **Phase 4 聊天集成验收（2026-11-22）**：功能链路通过（前端开关、3000→5000→8002→Milvus、服务间 token、工具选择双向、8002 停机/空库/3s 超时降级）；性能仍不达标，生产 3s 超时必然回落本地，详见 `docs/RAG聊天集成验收报告.md`。
 - **BM25 混合检索（2026-11-22，默认关闭）**：`HYBRID_SEARCH_ENABLED=false` 时仍走 `kb_chunks` dense + TEI，行为不变。开启（需重启 8002）后读写切到 `kb_chunks_hybrid`（`text` 字段 chinese analyzer + `sparse` BM25），检索为 dense + BM25 两路 -> `RRFRanker(k=60)`，**不做 TEI 精排**（Milvus `hybrid_search` 只接受一个 ranker，RRF 与 RERANK 无法串联）。实测：dense 26/26 零差异；hybrid 26/28（2 条语义回退，根因是 BM25 噪声经 RRF 放大）；性能 p50 20.6s→0.23s；BM25 增量未证实，故**保持默认关闭**。RRF 分数是名次融合值（0.015~0.033），不可当相似度或阈值用；`/retrieve` 响应新增 `scoreScale`。详见 `docs/BM25混合检索验收报告.md`。
-- **检索定案 dense-only（2026-11-22，生产配置）**：`RAG-Knowledge-System/backend/.env` 的 `RERANK_ENABLED` 已由 `true` 改为 **`false`**（代码默认值本就是 false，无代码改动），检索走纯 COSINE，`scoreScale=cosine`。依据：TEI 在生产 3s `RAG_TIMEOUT` 下从未成功（8 条实测仅 1 次触发且超时回落），dense-only 触发 2/2 答对，28 条回归 26/28（原始 25/26）。**关键口径**：`search_knowledge` 把 topK=4 全部喂给模型，检索层 top1 错位不等于回答错误，判定必须分层；实测 top1 错位（`09-programming-guide`）也可答对。**已知未解决**：冷启动首次检索 16.4s 必回落、暖机最慢 2.13s 逼近阈值，长尾未量化；工具调用触发率 2/8 是当前第一瓶颈。TEI 与小 reranker（b 路线）作为存量资产保留，改回只需一个开关。详见 `docs/性能改进预检与dense-only定案报告.md`。
+- **检索定案 dense-only（2026-11-22，生产配置）**：`RAG-Knowledge-System/backend/.env` 的 `RERANK_ENABLED` 已由 `true` 改为 **`false`**（代码默认值本就是 false，无代码改动），检索走纯 COSINE，`scoreScale=cosine`。依据：TEI 在生产 3s `RAG_TIMEOUT` 下从未成功（8 条实测仅 1 次触发且超时回落），dense-only 触发 2/2 答对，28 条回归 26/28（原始 25/26）。**关键口径**：`search_knowledge` 把 topK=4 全部喂给模型，检索层 top1 错位不等于回答错误，判定必须分层；实测 top1 错位（`09-programming-guide`）也可答对。**已知未解决**：冷启动首次检索 16.4s 必回落、暖机最慢 2.13s 逼近阈值，长尾未量化（工具调用触发率问题已于同日修复，见下条）。TEI 与小 reranker（b 路线）作为存量资产保留，改回只需一个开关。详见 `docs/性能改进预检与dense-only定案报告.md`。
+- **工具调用触发率（2026-11-22 修复）**：`prompts.py` 规则 3 由「伴侣设定」扩为「知识库查询」，覆盖项目文档/技术规范/编码约定/团队流程/发布计划，判断标准是「答案取决于我们项目内部怎么定的 → 必须查库」；规则 6 收紧通用知识边界；规则 7 要求查无结果必须说「知识库里没有」，不得把通用知识冒充项目规范。`search_knowledge` 工具描述同步扩为「伴侣 / 项目专属知识库」。实测（20 条 × 3 轮）：fact 触发率 **10/24 → 24/24**，general 保持 **0/9**，persona/memory 100% 不退化，fact/persona 误调 `search_user_memory` **12 次 → 0 次**；防编造抽查 A-2/A-3/A-7 共 9 轮全部引用原文。遗留：`E-1` 模糊指代改为反问澄清（可接受）、`C-3` 单轮 3~6 次重复调用、1/36 检索 >3s 瞬时长尾（6.1s，未复现，预热无法解决）。详见 `docs/工具调用触发率实验报告.md`。
 - **工具选择规则（2026-11-15 修复）**：用户本人记忆/聊天历史 → `search_user_memory`；伴侣角色喜好/设定/背景 → `search_knowledge`。改提示词时双向都要测，避免把偏见从一侧翻到另一侧。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
@@ -144,6 +145,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - `docs/RAG聊天集成验收报告.md` — Phase 4 聊天集成验收（功能通过、性能不通过、环境终态）
 - `docs/BM25混合检索验收报告.md` — BM25+RRF 灰度验收（技术可行、dense 零差异、质量未达启用、RRF 阈值实测）
 - `docs/性能改进预检与dense-only定案报告.md` — 检索定案（四方案矩阵、聊天层实测、TEI 搁置理由、未解决项）
+- `docs/工具调用触发率实验报告.md` — 触发率实验（v1 作废原因、前後对照、防编造抽查、瞬时长尾）
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
