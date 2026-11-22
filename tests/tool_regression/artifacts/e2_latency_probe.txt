@@ -1,0 +1,26 @@
+
+===== run1 total=14579ms ans=258 =====
+  +2848ms ai TOOL-START
+  +8075ms ai TOOL-START
+  +9711ms rag RAG-200
+  +10445ms ai TOOL-START
+  +10691ms rag RAG-200
+  ANSWER: 根据项目知识库的信息，这个项目使用的技术栈是：  主要技术栈： FastAPI - Python Web框架 PostgreSQL - 数据库  环境配置： Python 3.12.4 使用虚拟环境（目录名：`.venv`） 通过 `requirements.txt` 管理依赖  开发规范： 使用显式类型标注 函数保持
+
+===== run2 total=6072ms ans=240 =====
+  +1441ms ai TOOL-START
+  +1708ms rag RAG-200
+  +3452ms ai TOOL-START
+  +3700ms rag RAG-200
+  ANSWER: 根据知识库中的信息，这个项目使用的技术栈是：  后端框架：FastAPI（Python Web框架） 数据库：PostgreSQL  从技术规范中可以看到： 示例项目明确使用 FastAPI 和 PostgreSQL 代码风格要求显式类型标注，函数保持短小 数据库相关的示例都要求附可执行的验证SQL 项目推荐使用独立环
+
+===== run3 total=5055ms ans=254 =====
+  +1018ms ai TOOL-START
+  +1224ms rag RAG-200
+  ANSWER: 知识库中没有找到关于这个项目具体技术栈的相关内容。  从知识库中我找到了一些项目管理和开发规范的通用指导，比如环境管理、依赖管理、项目文档要求等，但没有具体说明这个项目使用的技术栈（如编程语言、框架、数据库等）。  如果您需要了解这个项目的具体技术栈，建议您： 1. 查看项目的README文件或技术文档 2. 检查项目
+Traceback (most recent call last):
+  File "D:\Ai_robotchat\logs\e2_latency_probe.py", line 95, in <module>
+    main()
+  File "D:\Ai_robotchat\logs\e2_latency_probe.py", line 91, in main
+    w.stop()
+TypeError: 'Event' object is not callable
