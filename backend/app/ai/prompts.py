@@ -6,15 +6,18 @@ def build_system_prompt(
     personality: str = "温柔体贴",
     companion_name: str = "",
     persona_prompt: str = "",
+    person_section: str = "",
 ) -> str:
     """Build multi-layer system prompt for GLM chat.
 
     Layers:
-    1. Persona (name + custom persona)
-    2. Empathy (empathy + emotional guidance)
-    3. Utility (accuracy + no fabrication)
-    4. Safety (crisis intervention)
-    5. Tool usage instructions
+    1. Persona (name + custom persona; default fallback suppressed when
+       person_section is provided, to avoid a double persona sentence)
+    2. Person section (companion's own systemPrompt, optional)
+    3. Empathy (empathy + emotional guidance)
+    4. Utility (accuracy + no fabrication)
+    5. Safety (crisis intervention)
+    6. Tool usage instructions
     """
     # 1. Persona layer
     persona_parts = []
@@ -22,7 +25,21 @@ def build_system_prompt(
         persona_parts.append(f"你叫{companion_name}")
     if persona_prompt:
         persona_parts.append(persona_prompt)
-    persona = "，".join(persona_parts) if persona_parts else f"你是一个{personality}的AI伴侣"
+    if person_section.strip():
+        # 伴侣自定义人设接管身份层：抑制默认兜底句，避免出现双人格句。
+        # 显式传入的 companion_name / persona_prompt 仍保留（当前调用点不传）。
+        persona = "，".join(persona_parts)
+    else:
+        persona = "，".join(persona_parts) if persona_parts else f"你是一个{personality}的AI伴侣"
+
+    # 2. Person section（插槽）：只定义身份与说话风格，规则优先级显式后置声明
+    role_setting = ""
+    if person_section.strip():
+        role_setting = (
+            "【角色设定】\n"
+            + person_section.strip()
+            + "\n（以上仅定义身份与说话风格；若与下文工具规则冲突，一律以工具规则为准。）\n\n"
+        )
 
     # 2. Empathy layer
     empathy = "善于识别用户情绪，先共情回应，再进行情绪疏导，最后给予积极正向的引导"
@@ -51,8 +68,9 @@ def build_system_prompt(
 8. 避免编造：严禁编造不存在的信息，无法回答时要坦诚说明
 """
 
-    # 完整的系统提示词
-    full_prompt = f"""{persona}。{empathy}。{utility}。{safety}。
+    # 完整的系统提示词（person_section 为空时与历史输出逐字一致）
+    identity = f"{persona}。" if persona else ""
+    full_prompt = f"""{identity}{role_setting}{empathy}。{utility}。{safety}。
 
 {tool_usage}
 

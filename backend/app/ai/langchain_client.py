@@ -142,12 +142,15 @@ class LangChainGLMClient:
         self.agent = self._build_agent(self.tools)
         print("[LangChain] Agent ready, tools: " + str([t.name for t in self.tools]))
 
-    def _build_agent(self, tools: List[Any]):
-        """用指定工具集构建 Agent（每次调用都是纯内存操作，开销 <1ms）"""
+    def _build_agent(self, tools: List[Any], person_section: str = ""):
+        """用指定工具集构建 Agent（每次调用都是纯内存操作，开销 <1ms）。
+
+        person_section：伴侣自定义 systemPrompt。为空时输出与历史完全一致。
+        """
         return create_agent(
             model=self.llm,
             tools=tools,
-            system_prompt=build_system_prompt(),
+            system_prompt=build_system_prompt(person_section=person_section),
         )
 
     def _init_tools(self, companion_id: Optional[str] = None) -> List[Any]:
@@ -413,11 +416,15 @@ class LangChainGLMClient:
         chat_history: Optional[List[Dict]] = None,
         personality: str = "温柔体贴",
         user_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """同步对话（含 Function Calling）"""
         try:
+            agent = self.agent
+            if system_prompt:
+                agent = self._build_agent(self.tools, person_section=system_prompt)
             messages = self._build_messages(user_input, chat_history, user_id)
-            result = self.agent.invoke({"messages": messages})
+            result = agent.invoke({"messages": messages})
             content = self._extract_content(result)
             return {
                 "content": NaturalLanguageOutputParser.parse(content),
@@ -437,6 +444,7 @@ class LangChainGLMClient:
         personality: str = "温柔体贴",
         user_id: Optional[str] = None,
         companion_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """流式对话（含 Function Calling）。
 
@@ -444,14 +452,13 @@ class LangChainGLMClient:
         对前端表现为逐段吐字。
 
         有 companion_id 时构建带闭包的工具集 + agent（search_knowledge 优先调 8002），
-        无 companion_id 时复用单例 agent。
+        有 system_prompt 时把伴侣人设注入 Agent；两者都为空时复用单例 agent。
         """
         try:
-            # 有 companion_id 时按请求构建 agent（闭包绑定，并发安全）
             agent = self.agent
-            if companion_id:
+            if companion_id or system_prompt:
                 tools = self._init_tools(companion_id=companion_id)
-                agent = self._build_agent(tools)
+                agent = self._build_agent(tools, person_section=system_prompt or "")
 
             messages = self._build_messages(user_input, chat_history, user_id)
             result = await agent.ainvoke({"messages": messages})

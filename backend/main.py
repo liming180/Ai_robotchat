@@ -737,7 +737,8 @@ async def chat_langchain(request: ChatRequest):
                         user_input=request.userMessage,
                         chat_history=history,
                         personality=personality,
-                        user_id=request.userId
+                        user_id=request.userId,
+                        system_prompt=request.systemPrompt,
                     )
                     return APIResponse(
                         success=True,
@@ -805,6 +806,7 @@ async def chat_langchain_stream(request: ChatRequest):
                         personality=personality,
                         user_id=request.userId,
                         companion_id=request.companionId,
+                        system_prompt=request.systemPrompt,
                     ):
                         data = json.dumps({"delta": chunk, "done": False}, ensure_ascii=False)
                         yield f"data: {data}\n\n"

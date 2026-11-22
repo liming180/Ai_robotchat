@@ -1,8 +1,48 @@
 """Tests for prompt builders (system prompt + avatar prompt)."""
+import pathlib
+
 from app.ai.prompts import build_system_prompt, build_avatar_prompt
+
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 
 # ---------- build_system_prompt ----------
+
+def test_system_prompt_default_output_is_byte_identical():
+    """空 person_section 时，输出必须与接入前的真实输出逐字一致。
+
+    黄金基线 tests/fixtures/default_system_prompt.txt 由改动前的
+    build_system_prompt() 实际输出生成（len=1031, sha256=ccd6362b...）。
+    """
+    golden = (FIXTURES / "default_system_prompt.txt").read_text(encoding="utf-8")
+    assert build_system_prompt() == golden
+    assert build_system_prompt(person_section="") == golden
+    assert build_system_prompt(person_section="   \n  ") == golden
+
+
+def test_person_section_suppresses_default_persona_sentence():
+    """插槽有值时，不得再出现 L1 默认兜底句（避免双人格句）。"""
+    prompt = build_system_prompt(person_section="你是一个叫小暖的温柔伴侣。")
+    assert "【角色设定】" in prompt
+    assert "你是一个叫小暖的温柔伴侣。" in prompt
+    assert "你是一个温柔体贴的AI伴侣" not in prompt
+
+
+def test_person_section_keeps_tool_and_anti_fabrication_rules():
+    """插槽不得挤掉工具规则与防编造规则，且声明规则优先。"""
+    prompt = build_system_prompt(person_section="你是一个叫小暖的温柔伴侣。")
+    assert "知识库查询（search_knowledge）" in prompt
+    assert "知识库里没有找到相关内容" in prompt
+    assert "以工具规则为准" in prompt
+    assert "避免编造" in prompt
+
+
+def test_person_section_empty_preserves_legacy_layers():
+    """空插槽时 L1 兜底句与各规则段保持历史行为。"""
+    prompt = build_system_prompt()
+    assert prompt.startswith("你是一个温柔体贴的AI伴侣。")
+    assert "【角色设定】" not in prompt
+
 
 def test_system_prompt_contains_empathy_framework():
     """情感层：必须包含共情/情绪疏导/积极引导的引导词。"""
