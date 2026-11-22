@@ -66,7 +66,9 @@ public class JwtUtil {
                 .claims(claims)
                 .issuedAt(now)
                 .expiration(expiryDate)
-                .signWith(getSigningKey())
+                // 显式钉死 HS512：不能靠 signWith(key) 按密钥长度自动选择，
+                // 否则换密钥长度会静默改算法，8002 侧验签随之失配。
+                .signWith(getSigningKey(), Jwts.SIG.HS512)
                 .compact();
     }
 

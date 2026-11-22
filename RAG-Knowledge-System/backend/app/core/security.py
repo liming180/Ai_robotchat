@@ -104,15 +104,14 @@ def verify_jwt(authorization: Optional[str] = Header(None)) -> str:
 
     token = authorization.split(" ", 1)[1].strip()
     try:
-        # 算法必须与 Java 实际签发的一致，不能想当然写死 HS256。
-        # Java 用 `.signWith(key)` 由密钥长度自动选择：64 字节 → HS512，
-        # 32 字节 → HS256。这里只放行 HMAC 族（HS256/384/512），
-        # 既兼容两侧密钥长度变化，又杜绝 alg=none 与非对称算法混淆攻击。
+        # 算法与 Java 显式钉死一致：Java 侧用 `signWith(key, Jwts.SIG.HS512)`，
+        # 这里只放行 HS512。两侧都不再依赖密钥长度自动选择，避免换密钥时静默失配。
+        # 只接受 HMAC 族中的 HS512，同时杜绝 alg=none 与非对称算法混淆攻击。
         # PyJWT 默认校验 exp，options 里再显式声明一次，避免将来被改动带偏。
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
-            algorithms=["HS256", "HS384", "HS512"],
+            algorithms=["HS512"],
             options={"require": ["exp"]},
         )
     except jwt.ExpiredSignatureError:

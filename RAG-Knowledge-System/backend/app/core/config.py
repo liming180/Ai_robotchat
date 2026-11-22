@@ -76,7 +76,6 @@ class Settings(BaseSettings):
     # 历史变体（曾因此读到一个 64 位旧密钥，两侧不同源却无报错）。
     # 默认空串 → 启动自检直接失败，不会带错密钥静默运行。
     jwt_secret_key: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET", "jwt_secret_key"))
-    jwt_algorithm: str = "HS256"
 
     # ---- 服务间共享密钥（5000 → 8002 检索）----
     # 留空则不校验（仅本地开发）；与 backend/.env 的 SERVICE_TOKEN 同值。

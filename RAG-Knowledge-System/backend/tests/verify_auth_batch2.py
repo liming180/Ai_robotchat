@@ -68,12 +68,12 @@ def check(group: str, name: str, expected_status: int, status: int, body: dict) 
 
 def make_expired_token(secret: str) -> str:
     now = int(time.time())
-    return jwt.encode({"userId": "u", "email": "e", "iat": now - 7200, "exp": now - 3600}, secret, algorithm="HS256")
+    return jwt.encode({"userId": "u", "email": "e", "iat": now - 7200, "exp": now - 3600}, secret, algorithm="HS512")
 
 
 def make_no_userid_token(secret: str) -> str:
     now = int(time.time())
-    return jwt.encode({"email": "e", "iat": now, "exp": now + 3600}, secret, algorithm="HS256")
+    return jwt.encode({"email": "e", "iat": now, "exp": now + 3600}, secret, algorithm="HS512")
 
 
 def main() -> int:

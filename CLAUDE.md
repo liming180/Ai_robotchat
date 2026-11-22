@@ -93,11 +93,11 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
   - **铁律**：归属判断的唯一身份来源是 JWT 的 `userId`，禁止信任请求体/查询参数中的自称身份。
   - **错误码**：401 未认证 / **403 无权（含不存在，防探测）** / **503 主库不可用**（不得伪装成 403）/ 400 参数非法。
   - **JWT 与 Java 同源**：8002 只读用户级环境变量 `JWT_SECRET`，`.env` 里**不得**再写 `JWT_SECRET_KEY`（`config.py` 用 `AliasChoices("JWT_SECRET", ...)` 显式绑定）。启动自检打印密钥**指纹前 8 位**，读到默认值或与 Java 兜底密钥一致时**直接启动失败**。
-  - **算法**：Java `.signWith(key)` 按密钥长度自动选算法（64 字节 → **HS512**，yml 注释写 HS256 是过时描述）。8002 验签放行 `HS256/384/512`，杜绝 alg=none 与算法混淆。
+  - **算法（2026-11-22 加固）**：Java 显式 `signWith(key, Jwts.SIG.HS512)`，不再按密钥长度自动选；8002 验签只 pin `["HS512"]`。两侧都钉死，换密钥长度不会静默失配。历史坑：曾因 `.signWith(key)` 自动选 HS512、8002 硬编码 HS256 导致验签全挂。
   - **预置伴侣禁建库**：`is_preset=1` 的伴侣不允许用户建 collection（403），否则私有库会进入全员检索范围破坏隔离；预置伴侣仅允许系统级知识。
   - CORS 由通配 `*` 收紧为 `CORS_ORIGINS`（默认 3001）。
   - **启动注意**：`start-all.ps1` 用 `Start-Process` 不继承当前 shell 环境，**必须先注入用户级变量再启动**（`[Environment]::SetEnvironmentVariable($n,$v,'Process')`），否则启动自检会按设计失败退出。
-- **Java 密钥口径**：`application.yml` 的 `secret: ${JWT_SECRET:兜底值}` 中兜底值**仅限本地开发**，生产部署必须设置 `JWT_SECRET`（HS256 需 ≥32 字节）。本机已用 `setx` 设置用户级 `JWT_SECRET`，**必须用新终端重启** Java/8002 才生效。
+- **Java 密钥口径**：`application.yml` 的 `secret: ${JWT_SECRET:兜底值}` 中兜底值**仅限本地开发**，生产部署必须设置 `JWT_SECRET`（HS512 需 ≥64 字节）。本机已用 `setx` 设置用户级 `JWT_SECRET`，**必须用新终端重启** Java/8002 才生效。
 - 登录转发（3001 前端用）走 `trust_env=False`，上游 Java 5xx 返回 502 而非伪装成 401 密码错误。
 - 回归资产在 `tests/rag_regression/`（18 篇文档 / 26 条预期 / `run_regression.py`），判定口径见该目录 `README.md`。
 
