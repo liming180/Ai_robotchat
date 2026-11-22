@@ -50,6 +50,10 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8002
 powershell -NoProfile -File scripts/start-all.ps1
 powershell -NoProfile -File scripts/stop-all.ps1    # 按端口反查进程树，含 Java 8081
 powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个服务
+# Milvus/TEI 已纳管（2026-11-22 Phase 4）：
+#   start-all 的 All/8002/docker 会先 docker compose up -d，等 milvus-standalone
+#   healthy 且 TEI /health=200 才继续；TEI CPU 冷启动约 3.5–4 分钟，最长等 600s。
+#   stop-all 的 All/docker 用 compose stop（保卷，不用 down）；-Service docker 单独停。
 ```
 
 **日志口径（2026-11-16 收口）**：统一写 `logs/<name>.out.log` / `<name>.error.log`，name ∈ `frontend-3000` / `ai-5000` / `java-8081` / `rag-8002`。**每次启动前把旧日志归档**为 `<name>.<stream>.<时间戳>.log`（因为 `Start-Process -RedirectStandardOutput` 会截断目标文件，不归档就会丢上次输出），每个服务每种流保留最近 5 个归档，超出自动删除。历史日志在 `logs/archive/`。
@@ -80,6 +84,8 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - **Redis 可选**：启动时探测，不可用则降级为进程内内存缓存（会话缓存 + 响应缓存）。
 - `app/ai/` 是 AI 核心模块：`langchain_client.py`（LangChain 1.x `create_agent` Function Calling，工具包括 `web_search`、`search_user_memory`、`add_user_memory`、`get_mood_history`、`search_knowledge`）、`rag.py`（Chroma 向量检索 + 本地哈希向量 Embedding——未接入远程 Embedding API；向量库存于 `backend/chroma_db/`）、`prompts.py`（系统提示词/头像提示词构建）、`config.py`（`LLMConfig` 配置，字段名 `API_KEY`/`MODEL`/`VISION_*` 映射自 `ZHIPU_*` 环境变量，另有 `RAG_SERVICE_URL`/`RAG_TIMEOUT`）、`avatar_store.py`。
 - **RAG 双路（P1-1 已完成）**：`search_knowledge` 优先调 8002 `/api/v1/kb/retrieve`（`{companionId, query, topK}`），**只在超时/异常/5xx 时回落本地 RAGStore**；8002 返回空 chunks 是正常业务结果，不回落。有 `companionId` 时每次请求构建新 agent（闭包绑定，并发安全），无则复用单例。
+- **工具调用可观测（2026-11-22）**：`search_user_memory` / `search_knowledge` 入口打印 `[tool] ...` 到 stdout（`flush=True`），用于工具选择回归实测。App logger 默认 WARNING 级，不要用 `logger.info`（会丢）。
+- **Phase 4 聊天集成验收（2026-11-22）**：功能链路通过（前端开关、3000→5000→8002→Milvus、服务间 token、工具选择双向、8002 停机/空库/3s 超时降级）；性能仍不达标，生产 3s 超时必然回落本地，详见 `docs/RAG聊天集成验收报告.md`。
 - **工具选择规则（2026-11-15 修复）**：用户本人记忆/聊天历史 → `search_user_memory`；伴侣角色喜好/设定/背景 → `search_knowledge`。改提示词时双向都要测，避免把偏见从一侧翻到另一侧。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
@@ -133,6 +139,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - `docs/后端技术文档.md` — 后端实现细节（数据库表结构、接口）
 - `docs/03-API接口文档.md` — API 规范
 - `docs/LANGCHAIN_MIGRATION_GUIDE.md` — LangChain 集成与 RAG 说明，但该文件为 GBK 编码，按 UTF-8 读取会乱码，需转码后再读
+- `docs/RAG聊天集成验收报告.md` — Phase 4 聊天集成验收（功能通过、性能不通过、环境终态）
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）

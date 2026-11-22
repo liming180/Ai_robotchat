@@ -19,7 +19,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('3000', '5000', '8081', '8002', 'All')]
+    [ValidateSet('3000', '5000', '8081', '8002', 'docker', 'All')]
     [string]$Service = 'All',
 
     # 默认值与本机环境一致；换机器时用参数覆盖，不要改脚本
@@ -98,6 +98,70 @@ function Invoke-LogArchive([string]$Name) {
     }
 }
 
+function Start-DockerStack {
+    <#
+    启动 Milvus + TEI（compose up -d），并等到 milvus-standalone healthy 且 TEI
+    /health 返回 200 才放行。8002 的检索强依赖这两者，先起 8002 会得到
+    「Milvus 连接失败 / rerank 不可用」的假故障。
+    只用 up -d / stop，不用 down —— 保卷保数据。
+    #>
+    $compose = Join-Path $ProjectRoot 'deploy\milvus\docker-compose.yml'
+    if (-not (Test-Path -LiteralPath $compose -PathType Leaf)) {
+        throw "compose 文件不存在：$compose"
+    }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        throw '未找到 docker 命令，无法启动 Milvus/TEI。'
+    }
+
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $log = Join-Path $LogDirectory "milvus-compose.$stamp.log"
+    Write-Status "启动 Milvus/TEI（docker compose up -d）..."
+    # docker compose 把 "Container xxx Running" 写到 stderr；脚本全局
+    # $ErrorActionPreference='Stop' 会把原生 stderr 当成 NativeCommandError。
+    # 这里局部降为 Continue，用退出码判断成败。
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $composeOutput = @()
+    $composeExit = 1
+    try {
+        # 用变量接住 2>&1，避免 PowerShell 把 docker 的 stderr 渲染成
+        # NativeCommandError 装饰文本写进日志。
+        $composeOutput = & docker compose -f $compose up -d 2>&1
+        $composeExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    $composeOutput | ForEach-Object { [string]$_ } | Set-Content -LiteralPath $log -Encoding utf8
+    if ($composeExit -ne 0) {
+        throw "docker compose up 失败（exit=$composeExit），日志：$log"
+    }
+
+    # TEI 冷启动实测约 3.5 分钟（Bert 加载 + CPU warmup），180s 不够；
+    # Milvus 通常 <60s healthy。两者都就绪才放行 8002。
+    $deadline = [DateTime]::UtcNow.AddSeconds(600)
+    $lastReport = [DateTime]::UtcNow
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $milvusState = [string](& docker inspect --format '{{.State.Health.Status}}' milvus-standalone 2>$null)
+        $teiOk = $false
+        try {
+            $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 3
+            $teiOk = $resp.StatusCode -eq 200
+        } catch {
+            $teiOk = $false
+        }
+        if ($milvusState.Trim() -eq 'healthy' -and $teiOk) {
+            Write-Status "Milvus/TEI 就绪（compose 日志：$log）" 'Green'
+            return
+        }
+        if (([DateTime]::UtcNow - $lastReport).TotalSeconds -ge 15) {
+            Write-Status "等待就绪：milvus=$($milvusState.Trim())，TEI health=$teiOk（最长 600s，冷启动约 3.5 分钟）" 'Yellow'
+            $lastReport = [DateTime]::UtcNow
+        }
+        Start-Sleep -Seconds 3
+    }
+    throw "Milvus/TEI 600 秒内未就绪，请查看日志：$log"
+}
+
 function Start-AppService {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -166,6 +230,11 @@ if ($Service -in @('All', '8081') -and -not (Test-Path -LiteralPath $Maven -Path
 }
 
 # ---------- 按端口序号启动（Java 最后，它依赖 Python/8002 就绪后调用的接口更稳定）----------
+# Milvus/TEI 必须先于 8002：8002 启动即连 Milvus，检索依赖 TEI rerank。
+if ($Service -in @('All', '8002', 'docker')) {
+    Start-DockerStack
+}
+
 if ($Service -in @('All', '3000')) {
     $Npm = (Get-Command npm.cmd -ErrorAction Stop).Source
     Start-AppService -Name 'frontend-3000' -Port 3000 -Executable $Npm `

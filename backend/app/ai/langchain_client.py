@@ -182,6 +182,9 @@ class LangChainGLMClient:
             Returns:
                 多条记忆内容拼接；无记忆时返回提示语
             """
+            # P4-4 工具选择验收需要可观测的调用痕迹；App logger 默认 WARNING 级，
+            # 这里沿用本文件既有 print 口径写 stdout（logs/ai-5000.out.log）。
+            print("[tool] search_user_memory user_id=" + str(user_id) + " keyword=" + str(keyword), flush=True)
             results: List[str] = []
 
             try:
@@ -327,6 +330,8 @@ class LangChainGLMClient:
             Returns:
                 检索到的知识片段
             """
+            # P4-4 工具选择验收：记录真实调用，避免靠答案内容猜测工具选择。
+            print("[tool] search_knowledge query=" + str(query), flush=True)
             # 有 companionId 时优先调 8002 RAG 服务（远程知识库）
             if companion_id:
                 try:

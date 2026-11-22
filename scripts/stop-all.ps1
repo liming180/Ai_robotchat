@@ -16,7 +16,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('3000', '5000', '8081', '8002', 'All')]
+    [ValidateSet('3000', '5000', '8081', '8002', 'docker', 'All')]
     [string]$Service = 'All',
     [switch]$Force
 )
@@ -44,7 +44,7 @@ $Targets = @(
     @{ Name = 'ai';        Port = 5000; WorkDir = (Join-Path $ProjectRoot 'backend');                         Markers = @('uvicorn');    Launchers = @('python.exe', 'uvicorn.exe') },
     @{ Name = 'rag';       Port = 8002; WorkDir = (Join-Path $ProjectRoot 'RAG-Knowledge-System\backend');     Markers = @('uvicorn');    Launchers = @('python.exe', 'uvicorn.exe') },
     @{ Name = 'java';      Port = 8081; WorkDir = (Join-Path $ProjectRoot 'backend-java');                    Markers = @('spring-boot'); Launchers = @('java.exe', 'mvn.cmd', 'mvn.exe', 'cmd.exe') }
-) | Where-Object { $Service -eq 'All' -or $_.Port -eq [int]$Service }
+) | Where-Object { $Service -eq 'All' -or ($Service -match '^\d+$' -and $_.Port -eq [int]$Service) }
 
 $Stopped = @()
 foreach ($target in $Targets) {
@@ -112,6 +112,38 @@ foreach ($target in $Targets) {
 }
 
 Start-Sleep -Milliseconds 700
+
+# 应用服务先停，最后停 Milvus/TEI（compose stop 保卷保数据，不用 down）。
+if ($Service -in @('All', 'docker')) {
+    $compose = Join-Path $ProjectRoot 'deploy\milvus\docker-compose.yml'
+    if (Test-Path -LiteralPath $compose -PathType Leaf) {
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Write-Status '停止 Milvus/TEI（docker compose stop，保留卷与数据）...'
+            # 与 start-all 同理：docker 的原生 stderr 在 Stop 模式下会变成终止错误。
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                & docker compose -f $compose stop 2>&1 | ForEach-Object { Write-Status ([string]$_) }
+                $composeExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            if ($composeExit -ne 0) {
+                throw "docker compose stop 失败（exit=$composeExit）"
+            }
+            Write-Status 'Milvus/TEI 已停止。' 'Green'
+        } else {
+            Write-Status '未找到 docker 命令，跳过 Milvus/TEI。' 'Yellow'
+        }
+    } else {
+        Write-Status "compose 文件不存在：$compose，跳过 Milvus/TEI。" 'Yellow'
+    }
+}
+
+if ($Service -eq 'docker') {
+    Write-Status '完成，仅停止 Milvus/TEI。' 'Green'
+    exit 0
+}
 
 $PortsToCheck = if ($Service -eq 'All') { @(3000, 5000, 8081, 8002) } else { @([int]$Service) }
 $Remaining = @(Get-NetTCPConnection -State Listen -LocalPort $PortsToCheck -ErrorAction SilentlyContinue)
