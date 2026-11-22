@@ -87,6 +87,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - **工具调用可观测（2026-11-22）**：`search_user_memory` / `search_knowledge` 入口打印 `[tool] ...` 到 stdout（`flush=True`），用于工具选择回归实测。App logger 默认 WARNING 级，不要用 `logger.info`（会丢）。
 - **Phase 4 聊天集成验收（2026-11-22）**：功能链路通过（前端开关、3000→5000→8002→Milvus、服务间 token、工具选择双向、8002 停机/空库/3s 超时降级）；性能仍不达标，生产 3s 超时必然回落本地，详见 `docs/RAG聊天集成验收报告.md`。
 - **BM25 混合检索（2026-11-22，默认关闭）**：`HYBRID_SEARCH_ENABLED=false` 时仍走 `kb_chunks` dense + TEI，行为不变。开启（需重启 8002）后读写切到 `kb_chunks_hybrid`（`text` 字段 chinese analyzer + `sparse` BM25），检索为 dense + BM25 两路 -> `RRFRanker(k=60)`，**不做 TEI 精排**（Milvus `hybrid_search` 只接受一个 ranker，RRF 与 RERANK 无法串联）。实测：dense 26/26 零差异；hybrid 26/28（2 条语义回退，根因是 BM25 噪声经 RRF 放大）；性能 p50 20.6s→0.23s；BM25 增量未证实，故**保持默认关闭**。RRF 分数是名次融合值（0.015~0.033），不可当相似度或阈值用；`/retrieve` 响应新增 `scoreScale`。详见 `docs/BM25混合检索验收报告.md`。
+- **检索定案 dense-only（2026-11-22，生产配置）**：`RAG-Knowledge-System/backend/.env` 的 `RERANK_ENABLED` 已由 `true` 改为 **`false`**（代码默认值本就是 false，无代码改动），检索走纯 COSINE，`scoreScale=cosine`。依据：TEI 在生产 3s `RAG_TIMEOUT` 下从未成功（8 条实测仅 1 次触发且超时回落），dense-only 触发 2/2 答对，28 条回归 26/28（原始 25/26）。**关键口径**：`search_knowledge` 把 topK=4 全部喂给模型，检索层 top1 错位不等于回答错误，判定必须分层；实测 top1 错位（`09-programming-guide`）也可答对。**已知未解决**：冷启动首次检索 16.4s 必回落、暖机最慢 2.13s 逼近阈值，长尾未量化；工具调用触发率 2/8 是当前第一瓶颈。TEI 与小 reranker（b 路线）作为存量资产保留，改回只需一个开关。详见 `docs/性能改进预检与dense-only定案报告.md`。
 - **工具选择规则（2026-11-15 修复）**：用户本人记忆/聊天历史 → `search_user_memory`；伴侣角色喜好/设定/背景 → `search_knowledge`。改提示词时双向都要测，避免把偏见从一侧翻到另一侧。
 - `app/models/` 为 SQLAlchemy ORM 模型；`app/services/memory_service.py` 封记了记忆/心情 CRUD。`app/database.py` 在连接失败时将 engine 置为 `None` 并告警——此时记忆类接口返回 503，但 AI 聊天仍可用。
 
@@ -142,6 +143,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - `docs/LANGCHAIN_MIGRATION_GUIDE.md` — LangChain 集成与 RAG 说明，但该文件为 GBK 编码，按 UTF-8 读取会乱码，需转码后再读
 - `docs/RAG聊天集成验收报告.md` — Phase 4 聊天集成验收（功能通过、性能不通过、环境终态）
 - `docs/BM25混合检索验收报告.md` — BM25+RRF 灰度验收（技术可行、dense 零差异、质量未达启用、RRF 阈值实测）
+- `docs/性能改进预检与dense-only定案报告.md` — 检索定案（四方案矩阵、聊天层实测、TEI 搁置理由、未解决项）
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
