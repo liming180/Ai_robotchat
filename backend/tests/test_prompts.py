@@ -9,10 +9,11 @@ FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 # ---------- build_system_prompt ----------
 
 def test_system_prompt_default_output_is_byte_identical():
-    """空 person_section 时，输出必须与接入前的真实输出逐字一致。
+    """空 person_section 时，输出必须与当前黄金基线逐字一致。
 
-    黄金基线 tests/fixtures/default_system_prompt.txt 由改动前的
-    build_system_prompt() 实际输出生成（len=1031, sha256=ccd6362b...）。
+    基线 2026-11-23 重新生成（规则 3 增「你的设定/按你的设定」判据）。
+    与接入前的差异仅来自规则 3 增补，接线逻辑不改变空值路径。
+    len=1127 字符，sha256=a4f8a609...
     """
     golden = (FIXTURES / "default_system_prompt.txt").read_text(encoding="utf-8")
     assert build_system_prompt() == golden
@@ -35,6 +36,15 @@ def test_person_section_keeps_tool_and_anti_fabrication_rules():
     assert "知识库里没有找到相关内容" in prompt
     assert "以工具规则为准" in prompt
     assert "避免编造" in prompt
+
+
+def test_person_section_declares_kb_first_for_project_facts():
+    """插槽声明必须要求项目事实/技术偏好先查知识库（v5 B-3 回退的修复）。"""
+    prompt = build_system_prompt(person_section="你是一个叫小智的知识助手。")
+    assert "涉及技术偏好、代码规范、项目事实时，必须先查知识库" in prompt
+    # 规则 3 的「你的设定 / 按你的设定」判据
+    assert "按你的设定" in prompt
+    assert "我写代码时要注意什么风格" in prompt
 
 
 def test_person_section_empty_preserves_legacy_layers():

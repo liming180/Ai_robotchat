@@ -1,22 +1,24 @@
 # request.systemPrompt 接入 Agent 验收报告
 
-- 日期：2026-11-22
+- 日期：2026-11-22（v5/v6 与构建成本补充：2026-11-23）
 - 方案：方案 A（人设插槽），用户批准
+- 状态：**v5 回退已修复，v6 全量通过；空值路径 general 补测 0/27 判定随机噪声；本批已 commit，待推送前审计**
 - 前置：`docs/工具调用触发率实验报告.md`（该报告记录的实验口径是「systemPrompt 未接入」，本批已接通）
 
 ## 一、问题与结论
 
 **问题**：前端建伴侣时保存的 `systemPrompt`（人设文本）从未到达模型。`langchain_client.py` 的 `_build_agent()` 固定调用 `build_system_prompt()`，`main.py` 的 `/api/v1/ai/chat/langchain[/stream]` 只传 `user_input / chat_history / personality / user_id / companion_id`。生产上所有伴侣实际都用平台默认提示词说话。
 
-**结论**：本批把 `request.systemPrompt` 作为**插槽**接入 `build_system_prompt(person_section=...)`，两条硬约束全部达成：
+**结论**：本批把 `request.systemPrompt` 作为**插槽**接入 `build_system_prompt(person_section=...)`。结构约束全部达成，但**生产路径（非空 systemPrompt）的 persona 触发率未达标**：
 
 | 约束 | 结果 | 证据 |
 | --- | --- | --- |
 | 非空 systemPrompt → L1 兜底句不出现，只有插槽 | ✅ | `test_person_section_suppresses_default_persona_sentence` |
 | 空 systemPrompt → 输出与接入前**逐字一致**（含 L1 兜底句） | ✅ | `test_system_prompt_default_output_is_byte_identical`（真实 diff 黄金基线，非口头保证） |
 | 插槽不得挤掉工具规则 1–8 与防编造规则 | ✅ | `test_person_section_keeps_tool_and_anti_fabrication_rules` |
-| 接入不引入触发率回归 | ✅ | v4 vs v3：fact 24/24、general 0/9，分类结论零变化 |
+| 接入不引入触发率回归（空串路径） | ✅ | v4 vs v3：fact 24/24、general 0/9，分类结论零变化 |
 | 伴侣人设与工具规则冲突时工具规则优先 | ✅ | 冲突探针 3/3 仍调 `search_knowledge` 并引用原文 |
+| **生产路径（小智插槽）persona 不退化** | **✅ v6 9/9**（v5 曾 8/9，已修复） | v6 全量复测；修复项见第九节 |
 
 `pytest tests` **24/24 通过**（新增 4 条）。
 
@@ -96,7 +98,62 @@
 
 **注意口径**：这 9 条验证的是「插槽内容进入模型 + 规则优先」，不是 20 条回归的替代。20 条回归本轮用空 systemPrompt 跑，**带真实人设的完整回归未做**（边界，见第五节）。
 
-## 四、证据与复核
+## 四、v5 生产路径回归（systemPrompt 非空，**未通过**）
+
+- 触发条件：`ChatPage.vue:561` 为 `currentCompanion.value.systemPrompt || '你是一个温柔体贴的AI伴侣。'`，生产 `systemPrompt` **恒非空**，v4 的空串路径生产不会走。
+- 口径：20 条 × 3 轮，`systemPrompt` = 小智真实预置提示词（`schema.sql` preset-2），其余同 v4。
+
+| 类型 | v3 | v4（空串） | **v5（小智插槽）** | 门槛 | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| fact | 24/24 | 24/24 | **24/24** | 24/24 | ✅ |
+| general | 0/9 | 0/9 | **0/9** | 0/9 | ✅ |
+| memory（mem 触发） | 12/12 | 12/12 | **12/12** | 不退化 | ✅ |
+| persona | 9/9 | 9/9 | **8/9** | 不退化 | ❌ |
+| edge | 3/6 | 5/6 | 3/6 | — | 观察 |
+
+检索延迟 n=35 p50 317 / p90 497 / max 1167ms，**>3s 0 次**；端到端 p50 4340ms、fact p50 5148ms。**不外推为性能提升**（仅单次 60 请求）。
+
+### 1. persona 逐条对照（B-1 / B-2 / B-3）
+
+| 用例 | v3 | v4 | v5 | 判定 |
+| --- | --- | --- | --- | --- |
+| B-1「你的设定里写代码示例喜欢用什么框架和数据库？」 | 3/3 触发，答 FastAPI + PostgreSQL，「不替换成 Flask 或 MySQL」 | 3/3 同左 | 3/3 同左，语气带小智讲解感 | 无退化 |
+| B-2「你之前说过咱们的技术偏好是什么来着？」 | 3/3 触发；r1 答技术栈，r2/r3 答实验规范（均取知识库） | 3/3 答实验规范 | 3/3 答实验规范 | 无退化（内容随检索命中变化，非人设导致） |
+| B-3「按你的设定，我写代码时要注意什么风格？」 | 3/3 引用项目编码规范（环境/接口/错误处理） | 3/3 同左（r1 调了 4 次） | **r1/r2 引用项目规范；r3 kb=0** | **回退** |
+
+**B-3 r3 原文开头**：
+
+> 根据我作为AI助手的设定，在编写代码时我建议你注意以下几个方面的代码风格：代码结构风格…模块化设计…单一职责原则…命名规范…使用4个空格或2个空格…
+
+这是通用编码建议，未查知识库，也**没有**声明「知识库里没有找到相关内容」——同时违反规则 3（「你的设定/偏好」类问题必须查库）与规则 7（查无结果必须说明）。v3/v4 同样问法均为 9/9 触发，说明**回退由小智人设插槽引入**，不是既有随机性可以解释。
+
+**机制解释**：小智人设「知识渊博、能够回答各种问题」把「按你的设定」引向「AI 助手自己的建议」，模型据此走了通用知识分支。v4 B-3 r1 已出现苗头（连查 4 次后说「没有找到关于我具体编程设定的详细信息」，仍靠项目规范作答），小智插槽把这个歧义放大成一次完全不查。
+
+**修法候选（先出方案，未实施）**：
+
+1. 规则 3 增判据：凡以「你的设定 / 按你的设定 / 你的偏好」询问代码/技术/项目做法的问题，一律视为项目知识库问题，必须先查库；补一条 B-3 式示例。
+2. 【角色设定】后置声明加一句：涉及具体技术偏好、代码规范、项目事实时，必须先查知识库，不得凭通用经验回答。
+3. 规则 7 补「未查询不得先回答」的显式表述（当前规则 7 只约束「查了没结果」）。
+
+建议 1+2 组合，改动仅提示词，然后 B-3 单条 ×5 + 20 条 ×3 复测。**本批未实施，等确认。**
+
+## 五、agent 构建成本实测
+
+测量脚本：`logs/agent_build_cost.py`（gitignored）。本机、5000 同机、未并发压测。
+
+| 项 | n | p50 | p90 | max | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `per_request_total`（`_init_tools` + `_build_agent`） | 50 | **36.57ms** | 44.37ms | 50.90ms | 生产每请求实际路径 |
+| `_init_tools(companion_id)` | 50 | 26.98ms | 33.55ms | 38.67ms | 重建工具闭包 |
+| `_build_agent` | 50 | 9.27ms | 11.56ms | 12.52ms | `create_agent` 包装 |
+| `build_system_prompt` | 5000 | 3.5µs | 5.3µs | 107.9µs | 纯字符串拼接 |
+| `full_client_init`（含 ChatOpenAI） | 10 | 54.10ms | 406.97ms | 406.97ms | **仅启动一次**，不在请求路径 |
+
+- **端到端占比**：36.57ms / 4340ms ≈ **0.84%**（p50）；最大 50.90ms / 4340ms ≈ 1.17%。远低于 100ms 阈值。
+- **内存**：连续建 50 次 RSS +0.24MB；再连续 20 次（每 5 次采样）均为 **+0.00MB**，无累积趋势。
+- **结论**：**不满足「>100ms 或内存持续增长」的缓存触发条件**，本批不实现 person_section 键控缓存。若未来 `_init_tools` 引入更重依赖或人设数量放大，再按「(companion_id, person_section hash) → agent，LRU 上限 + TTL」方案评估。
+
+## 六、证据与复核
 
 | 资产 | 位置 |
 | --- | --- |
@@ -104,19 +161,20 @@
 | 逐字一致断言 | `backend/tests/test_prompts.py::test_system_prompt_default_output_is_byte_identical` |
 | 验收证据汇总（可读） | `tests/tool_regression/artifacts/systemprompt_wiring.txt` |
 | 验收证据复核脚本 | `tests/tool_regression/artifacts/check_systemprompt_wiring.py` |
-| 原始数据（gitignored） | `logs/trigger-experiment{-v3,-v4}.json`、`logs/persona_conflict_results.json` |
+| 原始数据（gitignored） | `logs/trigger-experiment{-v3,-v4,-v5}.json`、`logs/persona_conflict_results.json`、`logs/agent-build-cost.txt` |
+| v5 失败证据 | `tests/tool_regression/artifacts/systemprompt_wiring.txt` 的 v5 段（B-3 r3 原文） |
 
 复核方式：仓库根目录执行 `python -I tests/tool_regression/artifacts/check_systemprompt_wiring.py`。
 
-## 五、边界与遗留
+## 七、边界与遗留
 
-1. **带真实人设的 20 条回归未跑**：本轮 20 条用空 systemPrompt，只隔离「接入是否回归」。插槽非空时的完整触发率未测，但非空路径只影响人设段与身份句，工具规则段逐字未变。
+1. **带真实人设的 20 条回归已跑（v5），persona 未通过**：8/9，失败项 B-3 r3。修复候选见第四节，未实施。fact/general/memory 三条门槛通过。
 2. **人设文本长度**：前端 `CreatePage.vue` 在用户未填时按性格自动生成（6 种模板，几十字级），手动填写无长度校验（DB `TEXT`）。超长人设会挤占上下文预算，未做限制。
 3. **personality 参数与人设的关系**：`main.py` 仍用 `_extract_personality(request.systemPrompt)` 做关键词匹配（仅为 PRESET_RESPONSES 兜底与直连链路服务），不影响 Agent。两者可能不一致（例如 `personality=温柔体贴` 但 systemPrompt 写的是小智），Agent 侧以插槽为准。
 4. **前端传给非流式 `/chat/langchain` 的路径**：Java 侧 `ChatServiceImpl` 用 `companion.getSystemPrompt()` 或默认「你是一个友好的AI助手」，本批同样接通；该值会是插槽内容，非空时不再出现平台 L1 句。
 5. **PRESET_RESPONSES 缺陷**：`_extract_personality` 匹配不到 6 个键时落到 `温柔体贴`。单独立项，本批不碰。
 
-## 六、环境终态
+## 八、环境终态
 
 | 项 | 状态 |
 | --- | --- |
@@ -125,3 +183,49 @@
 | `backend/.env` | **未改** |
 | `RERANK_ENABLED` / `HYBRID_SEARCH_ENABLED` | 未动（false / false） |
 | 代码改动 | `prompts.py`、`langchain_client.py`、`main.py`、`test_prompts.py` + 新增黄金基线 |
+
+## 九、v5 回退修复与 v6 复测（2026-11-23，**未提交**）
+
+### 1. 修复内容（仅提示词）
+
+- 规则 3 增判据：凡以「你的设定 / 按你的设定 / 你的偏好」询问代码风格、技术选型、项目做法的问题，一律视为项目知识库问题，必须先查库；补 B-3 式示例。
+- 【角色设定】后置声明补：「涉及技术偏好、代码规范、项目事实时，必须先查知识库，不得凭通用经验回答」。
+- 新增测试 `test_person_section_declares_kb_first_for_project_facts`。
+
+### 2. 黄金基线重生成
+
+- 旧基线：1031 字符 / sha256 `ccd6362b...`（接入前）。
+- 新基线：**1127 字符 / sha256 `a4f8a609...`**。
+- `diff` 显示空值路径的差异**只有规则 3 新增的两行**（「凡以"你的设定 / 按你的设定 / 你的偏好"…」+ B-3 示例），接线逻辑未改变空值路径。逐字一致断言锚定新基线继续生效。
+- `pytest tests` **25/25** 通过。
+
+### 3. 冒烟（B-3 ×5，小智提示词）
+
+**5/5 触发**，每轮均命中项目规范原文（依赖清单 / 分页上限 / 幂等 / 评审 / 创建时间 / 环境目录等）。原文摘录：
+
+> 根据项目的代码规范和编码风格要求…环境目录不要提交到版本库，但依赖清单必须与代码一起保存…接口设计规范…
+
+### 4. 全量 v6（20 条 ×3，小智提示词）
+
+| 类型 | v5 | **v6** | 门槛 | 结果 |
+| --- | --- | --- | --- | --- |
+| fact | 24/24 | **24/24** | 24/24 | ✅ |
+| general | 0/9 | **0/9** | 0/9 | ✅ |
+| persona | 8/9 | **9/9** | 9/9 | ✅ |
+| memory（mem 触发） | 12/12 | **12/12** | 12/12 | ✅ |
+
+检索延迟 n=36 p50 270 / p90 280 / max 582ms，**>3s 0 次**；端到端 p50 3985ms、fact p50 4773ms（不外推为性能提升）。B-3 三轮均 `kb=1` 并引用项目规范。
+
+### 5. 空值路径补验（general 9 + persona 9，systemPrompt 空串）—— **最终判定：随机噪声**
+
+首次 36 次补验中，persona 9/9、general **1/9**（D-1 r3）。按用户指示对 general 追加 **27 次**（3 条 ×9 轮）复测：
+
+| 项 | 结果 |
+| --- | --- |
+| general kb 触发 | **0/27** |
+| 「根据我查到的知识」类表述 | **0 次** |
+| D-1 九轮 | 全部 kb=0，无 claim 表述 |
+
+**判定：0/27 → D-1 r3 的 1/9 为随机噪声，不是系统性回退。** D-1 r3 的调用链（先 2 次 `search_user_memory`，再 1 次 `search_knowledge`，答「根据我查到的知识…」但内容为通用建议）保留在证据文件 `systemprompt_wiring.txt` 中，作为规则 7 擦边的单次样本记录；27 次复测未再现。
+
+**最终门槛汇总**：v6 生产路径 fact 24/24、general 0/9、persona 9/9、memory 12/12；空值路径 persona 9/9、general 0/27。全部通过。
