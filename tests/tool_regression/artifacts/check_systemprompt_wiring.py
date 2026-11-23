@@ -92,6 +92,11 @@ def main():
         if x["id"] == "D-1":
             print("  r%d kb=%d claim=%s" % (x["round"], x["kb_calls"], x["claim_phrases"]))
 
+    smoke = load("smoke-b3-v6.json")
+    print("\n[B-3 冒烟] 5 轮（小智提示词）")
+    for x in smoke:
+        print("  r%d kb=%d anchors=%s" % (x["run"], x["kb_calls"], x["anchors"]))
+
     probe = load("persona_conflict_results.json")
     print("[probe] 9 条")
     for x in probe:

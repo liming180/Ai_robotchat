@@ -1,8 +1,9 @@
-[golden] backend/tests/fixtures/default_system_prompt.txt len=2885 sha256=a4f8a6092d7171737972579e404c8c392ce02262d6376f80a2e51c72df0c7844
+[golden] backend/tests/fixtures/default_system_prompt.txt bytes=2885 / chars=1127 sha256=a4f8a6092d7171737972579e404c8c392ce02262d6376f80a2e51c72df0c7844
+[golden] 当前基线 1127 字符（提交 375a7f6）；接入前旧基线 1031 字符 / sha256 ccd6362b...（提交 0573e33）
 [golden] 2026-11-23 重生成（规则 3 增判据）；逐字一致断言在 backend/tests/test_prompts.py::test_system_prompt_default_output_is_byte_identical（真实 diff）
-[golden] 与接入前（1031 字符 / ccd6362b）的差异仅规则 3 新增两行，接线逻辑未改变空值路径
+[golden] 两次基线差异仅规则 3 新增两行，接线逻辑未改变空值路径
 
-[v4 口径] systemPrompt 传空串（与 v3 有效提示词相同），检验接线是否引入回归
+[v4 口径] 省略 systemPrompt 字段（None，与 v3 有效提示词相同），检验接线是否引入回归
 [diff] v3/v4 工具调用不一致 7/60 条（kb,mem）：
   A-1 r1  v3 kb=1 mem=0  ->  v4 kb=2 mem=0
   B-2 r1  v3 kb=2 mem=0  ->  v4 kb=1 mem=0
@@ -77,7 +78,15 @@
   r2 kb=1 | 根据我的设定，写代码时需要注意以下几个方面的风格：  环境管理规范 记录完整信息：项目开始前先记录解释器版本、操作系统和依赖安装方式 独立环境：推荐每个项目拥有独立环境，避免一个项目的升级破坏另一个项目 版本控制：环境目
   r3 kb=1 | 根据我的设定，你在写代码时需要注意以下代码风格要求：  代码风格规范  主要要求： 显式类型标注：所有函数和变量都应该有明确的类型标注 函数保持短小：函数要简洁，避免过于复杂 禁止使用无意义变量名：变量名要语义明确，避免
 
-[空值路径补验] general 9 + persona 9（systemPrompt 空串）
+[B-3 冒烟] 修复后 5 轮（小智提示词），锚点 = 项目规范原文关键词
+  r1 kb=1 anchors=依赖清单,分页上限,幂等,评审,创建时间,环境目录 len=723
+  r2 kb=1 anchors=依赖清单,分页上限,幂等,评审,创建时间,环境目录 len=609
+  r3 kb=1 anchors=依赖清单,分页上限,幂等,评审,创建时间,环境目录 len=643
+  r4 kb=1 anchors=显式类型标注 len=371
+  r5 kb=1 anchors=显式类型标注,依赖清单,分页上限,幂等,创建时间,环境目录 len=462
+  判定：5/5 触发且命中项目规范原文（r4 命中「显式类型标注」，见 08-preferences.md:6）
+
+[空值路径补验] general 9 + persona 9（实际传 ""）
   persona kb触发=9/9
   general kb触发=1/9
 [空值路径] D-1 三轮：
@@ -127,7 +136,7 @@
 
 你觉得这些建议怎么样？有什么特别适合你工作场景的调整吗？
 
-[general 复测] 3 条 ×9 轮（27 次，空值路径）
+[general 复测] 3 条 ×9 轮（27 次，空值路径，实际传 ""）
   kb 触发 0/27
 [general 复测]「根据我查到的知识」类表述命中：
   0 次
@@ -434,9 +443,9 @@ GROUP BY操作可以利用索引
 需要明确查询的数据规模、并发假设和可接受延迟
 
 这些规范确保了索引能够真正提升查询性能，而不是成为系统的负担。
-[probe 判定] 冲突 3/3 仍调用 search_knowledge 并引用原文 → 工具规则优先；小暖/小智语气差异明显；小智+A-7 2/2 触发
+[probe 判定] 冲突 3/3 仍调用 search_knowledge，答案命中原文要点（字段名 camelCase 化；源文档 03-sql-index.md:3 为 snake_case）→ 工具规则优先；小暖/小智语气差异明显；小智+A-7 2/2 触发
 
-[构建成本] logs/agent-build-cost.txt 摘要（本机、未并发）
+[构建成本] logs/agent-build-cost.txt 摘要（本机、未并发；未特别说明的 p50 均为 upper median）
   full_client_init n=10 p50=54.10ms p90=406.97ms max=406.97ms mean=88.93ms
   init_tools n=50 p50=26.98ms p90=33.55ms max=38.67ms mean=27.53ms
   build_agent n=50 p50=9.27ms p90=11.56ms max=12.52ms mean=9.29ms
@@ -444,6 +453,7 @@ GROUP BY操作可以利用索引
   rss_delta_50 = 0.24 MB
   rss_after_requests: n=5 +0.00MB, n=10 +0.00MB, n=20 +0.00MB
   build_system_prompt_us n=5000 p50=3.5us p90=5.3us max=107.9us
-  e2e 占比：per_request_total p50 36.57ms / v5 e2e p50 4340ms ≈ 0.84%；max 50.90ms ≈ 1.17%
+  e2e 占比：per_request_total p50 36.57ms / v5 端到端真实 median 4199.5ms ≈ 0.87%；max 50.90ms ≈ 1.21%
+  口径：36.57ms 为既有 companionId 重建路径成本；systemPrompt 净增仅提示词拼接（p50 3.5µs）
   内存：50 次 RSS +0.24MB；再 20 次每 5 次采样均 +0.00MB，无累积
   判定：未达 >100ms 或内存持续增长，不实现 person_section 键控缓存
