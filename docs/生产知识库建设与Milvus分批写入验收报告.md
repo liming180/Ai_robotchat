@@ -46,7 +46,7 @@ collection.flush()  # 末窗统一 flush 一次
 
 - 新增 `RAG-Knowledge-System/backend/tests/test_milvus_batch_insert.py`（5 条，全部通过）：150 条 → 批次 `[64, 64, 22]` 且 flush=1；64 条单批；3 条单批；0 条不 insert 不 flush；常量值为 64。用假 collection 验证切窗逻辑，不依赖 Milvus 在线。
 - `test_milvus_smoke` 全过。
-- 回归库 28 条：**27/28**，`A-CONTRAST-02` 为既有失败，与修复前基线一致，无新增回退。
+- 回归库 28 条：**27/28**，`A-CONTRAST-02` 为既有失败，与修复前基线一致，无新增回退。（该条性质、聊天层结论与重启触发条件见 `docs/04-重构接后端收敛点清单.md` P1-8。）
 
 ## 四、生产库建设
 
