@@ -16,11 +16,15 @@
 执行（Windows PowerShell 5.1 与 PowerShell 7 均可）：
     powershell -NoProfile -File scripts/start-all.ps1
     powershell -NoProfile -File scripts/start-all.ps1 -Service 8081
+    powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly   # 只校验凭证一致性，退出码 0/1
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('3000', '5000', '8081', '8002', 'docker', 'All')]
     [string]$Service = 'All',
+
+    # 只做前置校验（凭证一致性），不启动任何服务；退出码 0=通过 / 1=失败
+    [switch]$CheckOnly,
 
     # 默认值与本机环境一致；换机器时用参数覆盖，不要改脚本
     [string]$Python = 'D:\python\python.exe',
@@ -37,6 +41,9 @@ $LogDirectory = Join-Path $ProjectRoot 'logs'
 $PidDirectory = Join-Path $LogDirectory 'pids'
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $PidDirectory -Force | Out-Null
+
+# 凭证一致性工具（P2-5 动作 1）：只比 sha256 前 8 位，不打印 token 原值
+. (Join-Path $PSScriptRoot 'lib\credentials.ps1')
 
 function Write-Status([string]$Message, [string]$Color = 'Cyan') {
     Write-Host "[start-all] $Message" -ForegroundColor $Color
@@ -219,6 +226,54 @@ function Start-AppService {
         Select-Object -First 1).OwningProcess
     Set-Content -LiteralPath (Join-Path $PidDirectory "$Name.port.pid") -Value $listener -Encoding ascii
     Write-Status "$Name 就绪：$HealthUrl（监听 PID=$listener）；日志：$stdout" 'Green'
+}
+
+# ---------- 凭证一致性前置检查（P2-5 动作 1）----------
+# 任何服务启动之前执行：三处 SERVICE_TOKEN 不一致会让 5000 直接 401，
+# 请求不进业务逻辑（2026-11-24 故障）。只比 sha256 前 8 位，不打印原值。
+# 范围按 -Service 收敛：Java/docker 与 token 无关，跳过。
+if ($Service -in @('All', '3000', '5000', '8002')) {
+    $credentialChecks = @(
+        [pscustomobject]@{ Name = 'backend/.env'; File = 'backend/.env'; Key = 'SERVICE_TOKEN'; Severity = 'Base' }
+    )
+    if ($Service -in @('All', '3000', '5000')) {
+        $credentialChecks += [pscustomobject]@{
+            Name = 'frontend/.env.development'; File = 'frontend/.env.development'
+            Key = 'VITE_SERVICE_TOKEN'; Severity = 'Error'
+        }
+        # 生产构建用，本机 dev 启动不读它：不一致只警告，不阻断
+        $credentialChecks += [pscustomobject]@{
+            Name = 'frontend/.env.production'; File = 'frontend/.env.production'
+            Key = 'VITE_SERVICE_TOKEN'; Severity = 'Warning'
+        }
+    }
+    if ($Service -in @('All', '5000', '8002')) {
+        $credentialChecks += [pscustomobject]@{
+            Name = 'RAG-Knowledge-System/backend/.env'; File = 'RAG-Knowledge-System/backend/.env'
+            Key = 'SERVICE_TOKEN'; Severity = 'Error'
+        }
+    }
+
+    $credentialResult = Test-ServiceTokenConsistency -ProjectRoot $ProjectRoot -Checks $credentialChecks
+    foreach ($line in (Format-CredentialReport -Result $credentialResult)) {
+        Write-Status $line 'DarkGray'
+    }
+    if (-not $credentialResult.Ok) {
+        $detail = ($credentialResult.Errors -join "`n")
+        if ($CheckOnly) {
+            Write-Status "凭证一致性校验未通过：`n$detail" 'Red'
+            exit 1
+        }
+        throw "凭证一致性校验未通过，已中止启动：`n$detail"
+    }
+    Write-Status '凭证一致性校验通过' 'Green'
+} else {
+    Write-Status "跳过凭证一致性校验（-Service $Service 与 SERVICE_TOKEN 无关）" 'DarkGray'
+}
+
+if ($CheckOnly) {
+    Write-Status '校验完成（-CheckOnly 模式，未启动任何服务）' 'Green'
+    exit 0
 }
 
 # ---------- 前置检查 ----------

@@ -50,6 +50,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8002
 powershell -NoProfile -File scripts/start-all.ps1
 powershell -NoProfile -File scripts/stop-all.ps1    # 按端口反查进程树，含 Java 8081
 powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个服务
+powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三处 token 一致性，不启动（exit 0/1）
 # Milvus/TEI 已纳管（2026-11-22 Phase 4）：
 #   start-all 的 All/8002/docker 会先 docker compose up -d，等 milvus-standalone
 #   healthy 且 TEI /health=200 才继续；TEI CPU 冷启动约 3.5–4 分钟，最长等 600s。
@@ -123,7 +124,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - SSE 流式格式：每行 `data: {"delta": "文本", "done": false}\n\n`，结束帧 `{"delta": "", "done": true}`；前端按 `data: ` 前缀逐行解析。
 - 关键端点：`/api/v1/ai/chat/stream`（普通流式）、`/api/v1/ai/chat/langchain/stream`（RAG + Function Calling 增强流式）、`/api/v1/ai/suggestions`、`/api/v1/memory/{user_id}`、`/api/v1/mood/{user_id}`。
 - **流式端点鉴权（P1-5 已完成）**：两个 `/stream` 端点用 `Depends(verify_service_token)` 校验 `X-Service-Token` 头，不匹配返回 401；`SERVICE_TOKEN` 未配置时跳过。**必须用依赖注入**——写在函数体内会被 Pydantic body 校验抢先（无 token + 非法 body 会返回 400 而非 401）。**仅防误调，非安全加固**：前端 token 会进浏览器产物。
-- **三处 token 必须同值（2026-11-24 故障复盘）**：`backend/.env` 的 `SERVICE_TOKEN`（5000 校验入站 + 出站调 8002）、`RAG-Knowledge-System/backend/.env` 的 `SERVICE_TOKEN`（8002 校验入站）、`frontend/.env.development` 与 `.env.production` 的 `VITE_SERVICE_TOKEN`（前端出站）。任一处漂移 → 5000 直接 401，请求不进业务逻辑、不触达 8002 与 LLM。**前端两个 env 文件是 Vite 构建期常量，改后必须重启 3000**，热更新无效。前端把 401 统一渲染成「AI 服务响应异常，请检查网络连接后重试」（`ChatPage.vue:599`），文案与真实原因无关，排查先看 `logs/ai-5000.out.log` 的 `chat/*/stream` 状态码。全量凭证配置点清单见 `docs/诊断-前端聊天401根因与凭证配置点清单.md`。
+- **三处 token 必须同值（2026-11-24 故障复盘）**：`backend/.env` 的 `SERVICE_TOKEN`（5000 校验入站 + 出站调 8002）、`RAG-Knowledge-System/backend/.env` 的 `SERVICE_TOKEN`（8002 校验入站）、`frontend/.env.development` 与 `.env.production` 的 `VITE_SERVICE_TOKEN`（前端出站）。任一处漂移 → 5000 直接 401，请求不进业务逻辑、不触达 8002 与 LLM。**前端两个 env 文件是 Vite 构建期常量，改后必须重启 3000**，热更新无效。`start-all.ps1` 启动前已自动校验三处 token 指纹（不一致直接中止；`.env.production` 仅警告，8081/docker 跳过），`-CheckOnly` 可单跑，实现见 `scripts/lib/credentials.ps1`；前端 401 文案已点名 token 不一致（`frontend/src/lib/chatError.ts`），排查仍先看 `logs/ai-5000.out.log` 的 `chat/*/stream` 状态码。全量凭证配置点清单见 `docs/诊断-前端聊天401根因与凭证配置点清单.md`。
 
 ### 前端结构
 

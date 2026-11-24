@@ -336,6 +336,7 @@ import { useChatStore } from '@/stores/chat'
 import { useUserStore } from '@/stores/user'
 import { useNoteStore } from '@/stores/note'
 import { uploadImage } from '@/lib/api'
+import { describeChatError } from '@/lib/chatError'
 import { compressImage } from '@/lib/image'
 import { useStreamingChat } from '@/composables/useStreamingChat'
 import {
@@ -593,21 +594,8 @@ const sendMessage = async () => {
     refreshSuggestions()
   } catch (error) {
     console.error('AI 服务错误:', error)
-    let errorMessage = 'AI 服务暂时不可用，请稍后再试。'
-
-    if (error instanceof Error) {
-      if (error.message.includes('AI 服务响应异常')) {
-        errorMessage = 'AI 服务响应异常，请检查网络连接后重试。'
-      } else if (error.message.includes('AI 流式响应解析失败')) {
-        errorMessage = 'AI 响应解析失败，请重试。'
-      } else if (error.message.includes('AI 未生成有效内容')) {
-        errorMessage = 'AI 未生成有效内容，请尝试重新发送消息。'
-      } else if (error.message.includes('建议服务响应异常')) {
-        errorMessage = 'AI 建议服务暂时不可用，请稍后再试。'
-      } else if (error.message.includes('AI 未返回有效的建议数据')) {
-        errorMessage = 'AI 建议数据异常，请重试。'
-      }
-    }
+    // 401/403/429/网络错误分别提示，避免把鉴权失败渲染成「检查网络」（P2-5 动作 2）
+    const errorMessage = describeChatError(error)
 
     // 流式失败：把错误气泡显示出来，并只落 user 消息（assistant 没有内容可落）
     if (chatStore.currentConversationId) {

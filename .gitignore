@@ -99,6 +99,8 @@ backend-java/uploads/
 
 # 例外：lib/ 是 Python 模板规则，误伤前端源码目录（avatar.ts/utils.ts/api.ts）
 !frontend/src/lib/
+# 例外：scripts/lib/ 放 PowerShell 公共函数（凭证一致性校验），非 Python 虚拟环境目录
+!scripts/lib/
 # RAG 管理前端（2026-11-17）：*.env / lib/ 规则同样会误伤，补两条例外
 !RAG-Knowledge-System/frontend/.env.example
 !RAG-Knowledge-System/frontend/src/lib/
