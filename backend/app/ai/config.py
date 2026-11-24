@@ -35,6 +35,9 @@ class LLMConfig:
     # ── RAG 知识库服务（8002） ──
     RAG_SERVICE_URL: str = "http://localhost:8002"
     RAG_TIMEOUT: int = 3  # 秒
+    # 单次检索召回块数。默认 8：E-2 实测原话与 Agent 改写变体最远排到第 8 名，
+    # topK=4 会漏掉 08-preferences（详见 docs/E-2检索召回修复验收报告.md）。
+    RAG_TOP_K: int = 8
     # 服务间共享密钥：与 8002 的 SERVICE_TOKEN 同值，随 /retrieve 以
     # X-Service-Token 头发送。留空则不发送（8002 侧也未配置时不校验）。
     SERVICE_TOKEN: str = ""
@@ -78,6 +81,13 @@ class LLMConfig:
             self.RAG_SERVICE_URL = _os.getenv("RAG_SERVICE_URL").strip()
         if _os.getenv("RAG_TIMEOUT"):
             self.RAG_TIMEOUT = int(_os.getenv("RAG_TIMEOUT"))
+        if _os.getenv("RAG_TOP_K"):
+            # 与 8002 `/retrieve` 的 topK 约束一致（1~20）：非数字回落 8，
+            # 越界（含 0/负数/大于 20）夹到 1~20，避免 422 或 ValueError 进启动链路。
+            try:
+                self.RAG_TOP_K = max(1, min(20, int(_os.getenv("RAG_TOP_K"))))
+            except ValueError:
+                self.RAG_TOP_K = 8
         if not str(self.SERVICE_TOKEN or "").strip():
             self.SERVICE_TOKEN = _os.getenv("SERVICE_TOKEN", "").strip()
 

@@ -67,7 +67,9 @@ class Settings(BaseSettings):
     default_chunk_overlap: int = 50
 
     # ---- 检索 ----
-    retrieve_top_k: int = 4
+    # 默认 8：E-2 实测原话与 Agent 改写变体在 topK=4 下最远排到第 8 名
+    # （详见 docs/E-2检索召回修复验收报告.md）。单次返回 8 块，dense 下无 rerank 超时风险。
+    retrieve_top_k: int = 8
     retrieve_score_threshold: float = 0.0
 
     # ---- BM25 混合检索（2026-11-22，灰度默认关闭）----

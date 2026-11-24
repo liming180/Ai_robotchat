@@ -58,7 +58,8 @@ D:\python\python.exe -I tests/rag_regression/run_regression.py --verify-only --m
 
 - Milvus v2.6.0 的 rerank 模型调用 deadline 写在源码里：`internal/util/function/rerank/model_function.go` 的 `base.callService(ctx, requestBody, 30)`，**不是配置项**（`milvus.yaml` 无对应键，二进制 `strings` 扫描也无命中）。
 - 实测（CPU、`bge-reranker-v2-m3`）：6 条候选约 33.6s（超时）；4 条约 22.7–23.9s；2 条约 11.1s；1 条约 6.6s。耗时近似线性 ≈24ms/字。
-- 因此回归脚本固定 `topK=4`，与生产 5000 链路（`langchain_client.py` 的 `topK:4`）一致。**不做超时自动降 topK**：验收口径必须固定，静默降级会污染对照表；单条 rerank 超时仅重试 1 次（间隔 2s），且原始失败与重试结果都写入 state 与报告。
+- **2026-11-23 起**：脚本召回数改由 `--top-k` 控制，**默认 8**，与生产 5000 链路（`LLMConfig.RAG_TOP_K` 默认 8）一致；对照旧口径可传 `--top-k 4`。历史记录中的「固定 topK=4」仅描述 2026-11-21 那次验收。**不做超时自动降 topK**：验收口径必须固定，静默降级会污染对照表；单条 rerank 超时仅重试 1 次（间隔 2s），且原始失败与重试结果都写入 state 与报告。
+- 注意：上述 30s deadline 只在 `RERANK_ENABLED=true` 时生效；当前生产为 dense-only（`RERANK_ENABLED=false`），topK=8 不触发 rerank，无该超时风险。
 
 ### 回归库归属（2026-11-21 鉴权强制化后）
 

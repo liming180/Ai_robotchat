@@ -247,6 +247,7 @@ def verify_retrieve(
     state: dict[str, Any],
     mode: str = "dense",
     on_result=None,
+    top_k: int = 8,
 ) -> list[dict[str, Any]]:
     forbidden_threshold = (
         FORBIDDEN_HIT_SCORE_RRF if mode == "hybrid" else FORBIDDEN_HIT_SCORE
@@ -255,12 +256,11 @@ def verify_retrieve(
     expected_scales = ALLOWED_SCORE_SCALES[mode]
     for case in cases:
         data, retry_record = _retrieve_with_retry(api, {
-            # topK=4 与生产 5000 链路（langchain_client.py 的 topK:4）对齐，不是降低标准。
-            # 实测依据：Milvus v2.6.0 的 rerank deadline 是源码硬编码 30s
-            # （internal/util/function/rerank/model_function.go: callService(ctx, body, 30)），
-            # 6 条候选约 33.6s 必超时；4 条约 23.9s 可完成。不启用自动降 topK，避免污染对照表。
+            # topK 默认 8，与生产 5000 链路（LLMConfig.RAG_TOP_K 默认 8）对齐；
+            # 可用 --top-k 覆盖。dense-only 下无 rerank 调用，8 块不存在 30s deadline 风险
+            # （该限制仅 RERANK_ENABLED=true 时生效）。
             "companionId": state["companions"][case["companion"]]["companionId"],
-            "query": case["query"], "topK": 4, "scoreThreshold": 0,
+            "query": case["query"], "topK": top_k, "scoreThreshold": 0,
         })
         if data is None:
             results.append({
@@ -345,6 +345,10 @@ def main() -> None:
         help="dense=kb_chunks 单路（默认）；hybrid=kb_chunks_hybrid + BM25（需 8002 开 HYBRID_SEARCH_ENABLED）",
     )
     parser.add_argument("--state-file", type=Path, required=True, help="临时运行 ID 与结果；不含凭据")
+    parser.add_argument(
+        "--top-k", type=int, default=8,
+        help="单次检索召回块数（默认 8，与生产 5000 链路一致；对照旧口径可传 4）",
+    )
     args = parser.parse_args()
     if not args.setup and not args.verify_only:
         parser.error("请选择 --setup 或 --verify-only")
@@ -393,7 +397,7 @@ def main() -> None:
         args.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 只跑目标用例，--setup（建库导入）与 --verify-only（27 条检索）互不混合。
-    verify_retrieve(api, cases, state, mode=args.mode, on_result=_save_one)
+    verify_retrieve(api, cases, state, mode=args.mode, on_result=_save_one, top_k=args.top_k)
     args.state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"完成：{sum(r['passed'] for r in state['results'])}/{len(state['results'])}；结果不含账号密码或 token")
 

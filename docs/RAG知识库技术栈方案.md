@@ -44,7 +44,7 @@
 - **向量**：每知识库一个 Chroma collection（`kb_{collection_id}`），cosine，256 维哈希向量。
 - **存量极小**：`storage/chroma_db/` 约 0.4MB、2 个 collection、1 个上传文档 → **全量重导代价可忽略，不做数据迁移**。
 - **文档解析**：仅 json / md / txt，`BackgroundTasks` 异步入库，进度挂 `kb_document.task_id`。
-- **5000 依赖面**：仅 `POST /api/v1/kb/retrieve`，payload `{companionId, query, topK:4}`，超时 `RAG_TIMEOUT`（默认 3s）；超时/连接异常/5xx/4xx 回落本地 RAGStore（`backend/app/ai/rag.py`），空 chunks 是正常业务结果不回落。
+- **5000 依赖面**：仅 `POST /api/v1/kb/retrieve`，payload `{companionId, query, topK}`（**topK 默认 8**，见 `docs/E-2检索召回修复验收报告.md`），超时 `RAG_TIMEOUT`（默认 3s）；超时/连接异常/5xx/4xx 回落本地 RAGStore（`backend/app/ai/rag.py`），空 chunks 是正常业务结果不回落。
 - **边界（重要）**：5000 侧本地 RAGStore 除知识兜底外，还承载**用户记忆向量**（`add_memory` / `delete_memory`）。**本方案不迁移记忆向量**，该链路保持现状，是否迁 Milvus 列为后续可选项。
 
 ## 3. 选型决策

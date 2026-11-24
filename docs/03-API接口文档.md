@@ -475,7 +475,7 @@ data: {"delta": "", "done": true}
 
 > ⚠️ **现状**：LangChain 链路的流式是**模拟流式**——Agent 一次性生成完毕后按块切分下发，首字延迟 ≈ 全量生成时间；普通 `/chat/stream` 为真流式。
 >
-> **RAG 收敛（P1-1 已完成）**：`search_knowledge` 工具优先调 8002 `/api/v1/kb/retrieve`（body `{companionId, query, topK:4}`），**只在超时/异常/HTTP 5xx 时回落本地 RAGStore**（8002 返回空 chunks 是正常业务结果，不回落）。companionId 通过闭包绑定：有 companionId 时每次请求构建新 agent，无则复用单例，并发安全。
+> **RAG 收敛（P1-1 已完成）**：`search_knowledge` 工具优先调 8002 `/api/v1/kb/retrieve`（body `{companionId, query, topK}`，**topK 默认 8**，由 `RAG_TOP_K` 配置），**只在超时/异常/HTTP 5xx 时回落本地 RAGStore**（8002 返回空 chunks 是正常业务结果，不回落）。companionId 通过闭包绑定：有 companionId 时每次请求构建新 agent，无则复用单例，并发安全。
 
 ### 6. 快捷回复建议
 

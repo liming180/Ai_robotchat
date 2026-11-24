@@ -50,9 +50,10 @@ def _search_knowledge_remote(companion_id: str, query: str, config) -> Optional[
     if service_token:
         headers["X-Service-Token"] = service_token
 
+    top_k = int(getattr(config, "RAG_TOP_K", 8) or 8)
     resp = requests.post(
         config.RAG_SERVICE_URL + "/api/v1/kb/retrieve",
-        json={"companionId": companion_id, "query": query, "topK": 4},
+        json={"companionId": companion_id, "query": query, "topK": top_k},
         headers=headers,
         timeout=config.RAG_TIMEOUT,
     )
@@ -352,7 +353,9 @@ class LangChainGLMClient:
                 store = get_rag_store()
                 if store is None:
                     return "知识库暂不可用。"
-                docs = store.search(query, k=4)
+                # 与远程链路用同一个召回数，避免故障切换时召回能力打折
+                local_top_k = int(getattr(self.config, "RAG_TOP_K", 8) or 8)
+                docs = store.search(query, k=local_top_k)
                 if not docs:
                     return "知识库中没有找到相关内容。"
                 return "\n".join(d.page_content.strip() for d in docs if d.page_content.strip())
