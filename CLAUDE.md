@@ -99,6 +99,9 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 
 - 独立 FastAPI 服务（8002）：知识库/文档/切片/检索 API，元数据存 MySQL `rag_knowledge` 库。
 - **向量存储（2026-11-21 验收后口径）**：默认 **Milvus 2.6.0** 单集合 `kb_chunks`，`companion_id/collection_id/document_id` 均为 **VARCHAR(36)**（业务 ID 是 32 位无连字符 UUID 或 `preset-*`），Partition Key = `companion_id`；dense 向量由 **Milvus 服务端 Function 调智谱 embedding-3（2048 维）**生成，8002 只传文本。**Chroma（`storage/chroma_db/`，本地哈希 256 维）仅作回退，代码与依赖保留未删**。切换入口 `get_vector_store()`，开关 `VECTOR_STORE_BACKEND=milvus|chroma`。
+- **Milvus 单次 insert ≤64（2026-11-24 修复）**：Milvus 2.6.0 服务端硬限单次 insert 最多 64 条（超出 `code=1214 input数组最大不得超过64条`），且**无配置项可调**。`MilvusStore.insert()` 已按 `MAX_INSERT_BATCH = 64` 切窗循环、末窗统一 flush；`tests/test_milvus_batch_insert.py` 锁定切窗逻辑。新增导入路径不得绕过该分批逻辑，否则 >64 切片的文档会整篇入库失败（历史回归文档最多 30 块，长期未暴露）。
+- **Milvus 鉴权已启用（2026-11-24 核实）**：`deploy/milvus/milvus.yaml:938` `authorizationEnabled: true`，root 口令 6 字符（与 RAG `.env` 的 `MILVUS_PASSWORD` 同值），8002 以 `MILVUS_USER=root` 超级账号连接。匿名连接报 `missing authorization in header`。**专用业务账号（如 `milvus_rag`）尚未建立**，见 docs/04 P2-5 动作 3。
+- **生产知识库（2026-11-24）**：`3fcef9d1-658a-4348-aa50-cf81b501d483`「小智的项目知识库」，companion=`preset-2`，created_by=`system`，milvus/embedding-3/2048 维，6 文档 338 块（含人工事实块「本项目的技术栈」）。建库脚本 `scripts/build_production_kb.py`（预置伴侣禁建库，故以 system 身份直接落库）。**只收描述现状的文档**：方案/排期/任务清单类会稀释检索，验收报告类会把 fixtures 的虚构答案（PostgreSQL）带进生产库。详见 `docs/生产知识库建设与Milvus分批写入验收报告.md`。
 - **检索链路**：`retrieve` 路由必须是**普通 `def` 而非 `async def`**——底层 pymilvus `collection.search` 是同步阻塞，实测 async 下慢检索会阻塞事件循环导致 `/health` 无响应。
 - **rerank**：TEI 自托管 `bge-reranker-v2-m3`（容器名 `milvus-tei`，Milvus 容器视角 `http://tei:80`）。**Milvus v2.6.0 的 rerank deadline 源码硬编码 30s，不可配置**；CPU 推理约 24ms/字，4 候选约 22–26s，**当前性能不达标（远超 3s 预算）**，详见 `docs/RAG知识库数据导入验收报告.md`。
 - **鉴权（Phase 2 第一、二批已完成，2026-11-21）**：`/retrieve` 用 `X-Service-Token`（与 5000 的 `SERVICE_TOKEN` 同值）；**其余 15 个管理路由全部要求 `Authorization: Bearer <JWT>` 并做归属校验**，白名单仅 `/health`、`/`、`/api/v1/auth/login`。`tests/test_auth_coverage.py` 断言防漏挂。
@@ -120,6 +123,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - SSE 流式格式：每行 `data: {"delta": "文本", "done": false}\n\n`，结束帧 `{"delta": "", "done": true}`；前端按 `data: ` 前缀逐行解析。
 - 关键端点：`/api/v1/ai/chat/stream`（普通流式）、`/api/v1/ai/chat/langchain/stream`（RAG + Function Calling 增强流式）、`/api/v1/ai/suggestions`、`/api/v1/memory/{user_id}`、`/api/v1/mood/{user_id}`。
 - **流式端点鉴权（P1-5 已完成）**：两个 `/stream` 端点用 `Depends(verify_service_token)` 校验 `X-Service-Token` 头，不匹配返回 401；`SERVICE_TOKEN` 未配置时跳过。**必须用依赖注入**——写在函数体内会被 Pydantic body 校验抢先（无 token + 非法 body 会返回 400 而非 401）。**仅防误调，非安全加固**：前端 token 会进浏览器产物。
+- **三处 token 必须同值（2026-11-24 故障复盘）**：`backend/.env` 的 `SERVICE_TOKEN`（5000 校验入站 + 出站调 8002）、`RAG-Knowledge-System/backend/.env` 的 `SERVICE_TOKEN`（8002 校验入站）、`frontend/.env.development` 与 `.env.production` 的 `VITE_SERVICE_TOKEN`（前端出站）。任一处漂移 → 5000 直接 401，请求不进业务逻辑、不触达 8002 与 LLM。**前端两个 env 文件是 Vite 构建期常量，改后必须重启 3000**，热更新无效。前端把 401 统一渲染成「AI 服务响应异常，请检查网络连接后重试」（`ChatPage.vue:599`），文案与真实原因无关，排查先看 `logs/ai-5000.out.log` 的 `chat/*/stream` 状态码。全量凭证配置点清单见 `docs/诊断-前端聊天401根因与凭证配置点清单.md`。
 
 ### 前端结构
 
@@ -149,6 +153,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 - `docs/BM25混合检索验收报告.md` — BM25+RRF 灰度验收（技术可行、dense 零差异、质量未达启用、RRF 阈值实测）
 - `docs/性能改进预检与dense-only定案报告.md` — 检索定案（四方案矩阵、聊天层实测、TEI 搁置理由、未解决项）
 - `docs/工具调用触发率实验报告.md` — 触发率实验（v1 作废原因、前後对照、防编造抽查、瞬时长尾）
+- `docs/生产知识库建设与Milvus分批写入验收报告.md` — 生产库建库（preset-2）/ 621→338 口径决策 / Milvus 64 条分批修复 / E-2 关账
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
@@ -156,3 +161,6 @@ powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个
 1. 动手前先出改动清单：任何写代码/写文档的操作之前，必须先列出「将要新建/修改/删除的文件 + 每个文件改什么」，等用户确认后再执行。例外：纯咨询、跑只读命令（grep/读文件）不需要确认。
 2. 会话收尾写回文档：每次会话结束前，把本次新拍板的决策、修正的错误、新增的约束写回 docs/ 对应文件（优先级依据是 `docs/04-重构接后端收敛点清单.md`），并在汇报末尾列出写了哪些文件。不允许只停留在口头结论。
 3. 文档与代码冲突时，以代码实际状态为准，并把差异当作一条待修正项报告给用户，不要照着错误文档继续做。
+4. **回归资产与生产资产物理隔离（硬规矩，2026-11-24 用户拍板）**：`tests/rag_regression/` 的夹具与回归库（绑定测试用户 `48441a06…` / `1711e2d1…`）是回归世界，维护操作（清理、reindex、重建）不得波及生产库；生产库（`3fcef9d1`，绑定 `preset-2`，created_by=system）也不得作为回归基线。两套标准互不引用：回归用 fixtures 的示例答案，生产只装真话（真实技术栈 Vue3 + Spring Boot + FastAPI + MySQL）。
+5. **检索类修复的关账硬闸门（2026-11-24 用户拍板）**：任何检索类修复关账前，必须有一条**真实生产伴侣**上的问答验证通过；做不到的必须在验收报告显式标注生产伴侣数据状态并补验后才算过。回归库全绿不等于生产可用。
+6. **生产库人工事实块维护义务**：生产库 `3fcef9d1` 的文档「本项目的技术栈」为人工维护内容（脚本 `RAG-Knowledge-System/backend/scripts/build_production_kb.py` 的 `STACK_FACT`），项目技术栈变更时必须同步更新并 reindex，否则会向用户宣称过时事实。

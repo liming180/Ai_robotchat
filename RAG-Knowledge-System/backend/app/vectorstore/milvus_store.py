@@ -37,6 +37,10 @@ SCORE_SCALE_COSINE = "cosine"
 SCORE_SCALE_TEI = "tei"
 SCORE_SCALE_RRF = "rrf"
 
+# Milvus 单次 insert 的条数上限（服务端硬限 64，超出返回 code=1214）。
+# 超过此值的文档必须分批写入，见 insert()。
+MAX_INSERT_BATCH = 64
+
 
 class MilvusStore:
     """Milvus 向量存储（单集合 + Partition Key 隔离）
@@ -227,8 +231,17 @@ class MilvusStore:
         ]
 
         try:
-            # 插入数据
-            collection.insert(entities)
+            # Milvus 服务端限制单次 insert ≤64 条（实测 2.6.0 报 code=1214
+            # 「input数组最大不得超过64条」）。整篇文档一次插入会在 >64 切片时
+            # 直接失败，历史回归文档都不超过 30 块所以从未暴露。
+            # 按 MAX_INSERT_BATCH 切窗，末窗统一 flush 一次即可。
+            for start in range(0, len(entities), MAX_INSERT_BATCH):
+                window = entities[start : start + MAX_INSERT_BATCH]
+                collection.insert(window)
+                logger.info(
+                    f"插入批次 {start}-{start + len(window) - 1}"
+                    f"（共 {len(entities)} 条）, document_id={document_id}"
+                )
             # 立即 flush（避免查询命中 0 条）
             collection.flush()
             logger.info(f"插入成功: {len(texts)} 条切片, document_id={document_id}")
