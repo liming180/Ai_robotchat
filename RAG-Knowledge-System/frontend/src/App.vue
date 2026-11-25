@@ -1,34 +1,30 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
-const router = useRouter()
-const auth = useAuthStore()
+import AppHeader from '@/components/layout/AppHeader.vue'
+import AppSidebar from '@/components/layout/AppSidebar.vue'
 
-function logout() {
-  auth.logout()
-  router.push('/login')
-}
+const route = useRoute()
+const isPublic = computed(() => !!route.meta.public)
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <header
-      v-if="!$route.meta.public"
-      class="flex items-center gap-6 border-b border-neutral-800 px-6 py-3"
-    >
-      <span class="text-lg font-semibold text-accent">RAG 知识库</span>
-      <nav class="flex gap-4 text-sm text-neutral-300">
-        <RouterLink to="/collections" class="hover:text-accent">知识库</RouterLink>
-        <RouterLink to="/retrieve" class="hover:text-accent">检索调试</RouterLink>
-      </nav>
-      <div class="ml-auto flex items-center gap-3 text-sm text-neutral-400">
-        <span>{{ auth.userEmail }}</span>
-        <el-button size="small" @click="logout">退出</el-button>
-      </div>
-    </header>
-    <main class="flex-1 overflow-auto p-6">
-      <RouterView />
-    </main>
+  <RouterView v-if="isPublic" />
+  <div
+    v-else
+    class="flex h-full overflow-hidden bg-ink-950"
+  >
+    <AppSidebar />
+    <div class="flex min-w-0 flex-1 flex-col">
+      <AppHeader />
+      <main class="flex-1 overflow-y-auto">
+        <div class="mx-auto w-full max-w-[1200px] px-8 py-6">
+          <RouterView v-slot="{ Component }">
+            <component :is="Component" />
+          </RouterView>
+        </div>
+      </main>
+    </div>
   </div>
 </template>

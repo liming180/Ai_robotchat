@@ -9,5 +9,187 @@ body,
 }
 
 body {
-  @apply bg-neutral-950 text-neutral-200;
+  @apply bg-ink-950 text-neutral-200 antialiased;
+}
+
+/* ---------- Element Plus 深色主题对齐 accent ---------- */
+html.dark {
+  --el-color-primary: #ef7d63;
+  --el-color-primary-light-3: #f29d8b;
+  --el-color-primary-light-5: #f7bbac;
+  --el-color-primary-light-7: #fbd8cf;
+  --el-color-primary-light-8: #fce3dc;
+  --el-color-primary-light-9: #2a1e1b;
+  --el-color-primary-dark-2: #d7614a;
+
+  --el-bg-color: #141821;
+  --el-bg-color-page: #0a0c0f;
+  --el-bg-color-overlay: #1a1f29;
+  --el-fill-color-blank: #141821;
+  --el-fill-color-light: #1a1f29;
+  --el-fill-color-lighter: #171c25;
+
+  --el-border-color: #2e3746;
+  --el-border-color-light: #232a36;
+  --el-border-color-lighter: #232a36;
+  --el-border-color-extra-light: #1a1f29;
+
+  --el-text-color-primary: #e6e9ef;
+  --el-text-color-regular: #c3c9d4;
+  --el-text-color-secondary: #8b93a3;
+  --el-text-color-placeholder: #8b95a3;
+
+  --el-mask-color: rgba(6, 8, 11, 0.72);
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+}
+
+/*
+ * 主按钮：珊瑚底（#ef7d63）配白字只有 2.7:1，远低于 4.5:1。
+ * 改成近黑字（8.9:1），视觉上也更像「亮色按钮 + 深色标签」的现代做法。
+ * 只对实心按钮生效——plain / text / link 变体是「深底 + 珊瑚字」，
+ * 一并套深色字会变成 1.14:1 的隐形按钮。
+ */
+html.dark .el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  --el-button-text-color: #10141a;
+  --el-button-hover-text-color: #10141a;
+  --el-button-active-text-color: #10141a;
+  --el-button-disabled-text-color: rgba(16, 20, 26, 0.55);
+  font-weight: 600;
+}
+
+/* plain 主按钮：珊瑚底半透明，字色必须留在亮端 */
+html.dark .el-button--primary.is-plain {
+  --el-button-text-color: #f3b6a8;
+  --el-button-hover-text-color: #10141a;
+  --el-button-active-text-color: #10141a;
+}
+
+/* 单选按钮组选中态同样是珊瑚底 + 白字，一并改成深色字。
+   选择器要和 EP 自己的 `.el-radio-button.is-active .el-radio-button__original-radio:not(:disabled)+.el-radio-button__inner`
+   一样长（多一个 html.dark 前缀），否则被 EP 的更高优先级盖掉。 */
+html.dark .el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner,
+html.dark .el-radio-button__original-radio:checked:not(:disabled) + .el-radio-button__inner {
+  color: #10141a;
+  font-weight: 600;
+}
+
+/*
+ * el-input-number 的加减把手默认只有 32×15，低于 24×24 的点击区要求，
+ * 手指/触控板容易点空。这里把输入框撑到 32px 高，把手自然变成 32×16，并加宽热区。
+ */
+html.dark .el-input-number {
+  --el-input-height: 32px;
+  width: 100%;
+}
+html.dark .el-input-number .el-input__wrapper {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+html.dark .el-input-number__decrease,
+html.dark .el-input-number__increase {
+  width: 30px;
+  font-size: 13px;
+}
+
+/* ---------- 复用样式 ---------- */
+@layer components {
+  .panel {
+    @apply rounded-xl border border-ink-700 bg-ink-850 shadow-panel;
+  }
+
+  .panel-flat {
+    @apply rounded-lg border border-ink-700/70 bg-ink-900;
+  }
+
+  .subtle {
+    @apply text-[13px] text-neutral-400;
+  }
+
+  .mono {
+    @apply font-mono text-[12px] tracking-tight;
+  }
+
+  .chip {
+    @apply inline-flex min-h-6 items-center gap-1 rounded-md border border-ink-600/80 bg-ink-800/70 px-2 py-1 text-xs text-neutral-300;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-neutral-400 transition-colors
+      hover:bg-ink-800/70 hover:text-neutral-100;
+  }
+
+  .nav-item-active {
+    @apply bg-ink-800 text-neutral-50 shadow-[inset_2px_0_0_0_#ef7d63];
+  }
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e3746;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b465a;
+  background-clip: content-box;
+}
+
+/* element-plus 细节微调 */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: #171c25;
+  --el-table-border-color: #232a36;
+  --el-table-row-hover-bg-color: #1a1f29;
+}
+
+.el-table th.el-table__cell {
+  @apply text-xs font-medium uppercase tracking-wide text-neutral-500;
+}
+
+.el-drawer__header {
+  @apply mb-0 border-b border-ink-700 px-6 py-4 text-[15px] text-neutral-100;
+}
+
+.el-drawer__body {
+  @apply px-6 py-5;
+}
+
+.el-dialog {
+  @apply border border-ink-700;
+}
+
+.el-tabs__nav-wrap::after {
+  background-color: #232a36;
+}
+
+/* v-loading 的遮罩默认是半透明白，压在深色卡片上会留下一圈灰环（截图里像半截圆圈）。
+   改成和底色一致的深色蒙层，只保留珊瑚色的转圈。 */
+.el-loading-mask {
+  background-color: rgba(10, 12, 15, 0.55);
+  border-radius: 8px;
+}
+
+.el-loading-spinner .circular {
+  width: 26px;
+  height: 26px;
+}
+
+.el-loading-spinner .path {
+  stroke: #ef7d63;
+  stroke-width: 3;
+}
+
+.el-loading-spinner .el-loading-text {
+  color: #98a4b2;
+  font-size: 12px;
 }
