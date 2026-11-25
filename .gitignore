@@ -111,3 +111,6 @@ backend-java/uploads/
 # Milvus 配置（含明文密钥，不入库）
 deploy/milvus/milvus.yaml
 deploy/milvus/ops.local.md
+
+# 临时联调产物（含真实 JWT 令牌，2026-11-25 可用性收口时发现未忽略，不入库）
+.tmp-rag/

@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse  # noqa: E402
 from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
+from app.core.health import probe_milvus  # noqa: E402
 from app.core.response import fail, ok  # noqa: E402
 
 
@@ -112,21 +113,44 @@ app.include_router(auth.router)  # 登录转发：/api/v1/auth/login（自有前
 # 系统接口
 # ------------------------------------------------------------------
 @app.get("/health", tags=["System"])
-async def health():
-    """健康检查。"""
+def health():
+    """健康检查（2026-11-25 起含 Milvus 真实探活）。
+
+    Milvus 不可用时返回 HTTP 503，不再「进程活着就 200」——该盲区曾把 Milvus
+    退出掩盖成 25s 检索超时。探活走独立短超时（MILVUS_HEALTH_TIMEOUT，默认 2s），
+    与检索链路完全隔离。
+
+    **本路由必须是普通 def**：pymilvus 是同步阻塞调用（与 /retrieve 同一口径），
+    写成 async def 会堵住事件循环，连 /health 自己都会失去响应。
+    """
     from app.db.database import engine, main_engine
 
-    return ok(
-        {
-            "service": settings.app_name,
-            "version": "0.1.0",
-            "env": settings.app_env,
-            "database": "connected" if engine is not None else "unavailable",
-            "mainDatabase": "connected" if main_engine is not None else "unavailable",
-            "embeddingConfigured": True,  # 本地哈希向量，恒可用
-        },
-        message="healthy",
-    )
+    milvus = probe_milvus()
+    payload = {
+        "service": settings.app_name,
+        "version": "0.1.0",
+        "env": settings.app_env,
+        "database": "connected" if engine is not None else "unavailable",
+        "mainDatabase": "connected" if main_engine is not None else "unavailable",
+        "embeddingConfigured": True,
+        "vectorStore": settings.vector_store_backend,
+        "milvus": milvus["status"],
+        "milvusLatencyMs": milvus["latencyMs"],
+    }
+    if milvus["version"]:
+        payload["milvusVersion"] = milvus["version"]
+
+    if milvus["status"] == "unavailable":
+        return JSONResponse(
+            status_code=503,
+            content=fail(
+                f"向量库不可用（Milvus）：{milvus['error']}",
+                code="MILVUS_UNAVAILABLE",
+                data=payload,
+            ),
+        )
+
+    return ok(payload, message="healthy")
 
 
 @app.get("/", tags=["System"])

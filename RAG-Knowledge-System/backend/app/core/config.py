@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     milvus_user: str = ""  # 留空表示无认证
     milvus_password: str = ""
 
+    # ---- /health 的 Milvus 探活（2026-11-25 可用性收口）----
+    # 独立短超时：检索链路（RAG_TIMEOUT=3s、前端 90s）与探活互不影响。
+    # 实测容器停机时 pymilvus 建连约 1.5~2.1s（timeout 参数生效但存在约 2s 下限），
+    # 因此默认 2.0s 已能覆盖；健康时一次探活 1~46ms。
+    milvus_health_enabled: bool = True
+    milvus_health_timeout: float = 2.0
+
     # ---- Rerank（TEI 自托管，2026-11-19）----
     # 开关关闭时检索走纯 COSINE，行为与接入前逐字节一致
     rerank_enabled: bool = False

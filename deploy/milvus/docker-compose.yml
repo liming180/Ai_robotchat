@@ -3,6 +3,11 @@ services:
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.6.0
     command: ["milvus", "run", "standalone"]
+    # 自愈：进程崩溃/被 kill 后自动拉起（2026-11-24 时钟漂移曾致 etcd lease 丢失后退出，
+    # 容器无策略一直不复位）。用 unless-stopped 而非 always，保证 stop-all.ps1 的
+    # `docker compose stop` 是"手动停止"语义，不会被策略反向拉起。
+    # 注意 restart 策略不覆盖 `docker stop`：验收崩溃自愈必须用 kill 模拟。
+    restart: unless-stopped
     security_opt:
     - seccomp:unconfined
     environment:

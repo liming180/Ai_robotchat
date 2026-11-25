@@ -55,6 +55,9 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 #   start-all 的 All/8002/docker 会先 docker compose up -d，等 milvus-standalone
 #   healthy 且 TEI /health=200 才继续；TEI CPU 冷启动约 3.5–4 分钟，最长等 600s。
 #   stop-all 的 All/docker 用 compose stop（保卷，不用 down）；-Service docker 单独停。
+# 崩溃自愈（2026-11-25）：milvus/compose 的 standalone 已加 restart: unless-stopped。
+#   ⚠ restart 策略不覆盖 `docker stop`——验收崩溃自愈必须用 `docker exec milvus-standalone kill 1`。
+#   时钟校准：scripts/enable-w32time.ps1（管理员）启用 w32time + 换 NTP 源为 ntp.aliyun.com。
 ```
 
 **日志口径（2026-11-16 收口）**：统一写 `logs/<name>.out.log` / `<name>.error.log`，name ∈ `frontend-3000` / `ai-5000` / `java-8081` / `rag-8002`。**每次启动前把旧日志归档**为 `<name>.<stream>.<时间戳>.log`（因为 `Start-Process -RedirectStandardOutput` 会截断目标文件，不归档就会丢上次输出），每个服务每种流保留最近 5 个归档，超出自动删除。历史日志在 `logs/archive/`。
@@ -101,7 +104,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 - 独立 FastAPI 服务（8002）：知识库/文档/切片/检索 API，元数据存 MySQL `rag_knowledge` 库。
 - **向量存储（2026-11-21 验收后口径）**：默认 **Milvus 2.6.0** 单集合 `kb_chunks`，`companion_id/collection_id/document_id` 均为 **VARCHAR(36)**（业务 ID 是 32 位无连字符 UUID 或 `preset-*`），Partition Key = `companion_id`；dense 向量由 **Milvus 服务端 Function 调智谱 embedding-3（2048 维）**生成，8002 只传文本。**Chroma（`storage/chroma_db/`，本地哈希 256 维）仅作回退，代码与依赖保留未删**。切换入口 `get_vector_store()`，开关 `VECTOR_STORE_BACKEND=milvus|chroma`。
 - **Milvus 单次 insert ≤64（2026-11-24 修复）**：Milvus 2.6.0 服务端硬限单次 insert 最多 64 条（超出 `code=1214 input数组最大不得超过64条`），且**无配置项可调**。`MilvusStore.insert()` 已按 `MAX_INSERT_BATCH = 64` 切窗循环、末窗统一 flush；`tests/test_milvus_batch_insert.py` 锁定切窗逻辑。新增导入路径不得绕过该分批逻辑，否则 >64 切片的文档会整篇入库失败（历史回归文档最多 30 块，长期未暴露）。
-- **Milvus 鉴权与专用账号（2026-11-24 收口）**：`deploy/milvus/milvus.yaml` `authorizationEnabled: true`。8002 已从 root 切到专用账号 `MILVUS_USER=milvus_rag`（角色 `rag_rw`，**A 档精确最小权限 26 条**，仅 `kb_chunks` / `kb_chunks_hybrid` 两集合，只含 `Query/Search/Load/Insert/Delete/Flush/CreateIndex` 等业务实际调用项），root 口令已由 6 字符默认值轮换为 32 字符随机串。匿名连接报 `missing authorization in header`。**⚠ 删 volume 重建后 root 会按 `milvus.yaml` 的 `defaultRootPassword` 重新初始化**（该值已同步为新口令，不再是工厂默认的 `Milvus`），但 `milvus_rag`/`rag_rw` 仍会全部消失（RBAC 存 etcd），须重跑 `scripts/milvus_rbac_setup.py --apply` 并回写 `logs/.milvus_rag_pw`。运维账号口令与回滚细则见 `ops.local.md`（gitignore），权限探针为 `scripts/milvus_rbac_probe.py`。`milvus_rag` 调 `list_collections` 报 `etcdserver: invalid auth token` 是 Milvus 2.6 非 root 缺陷，8002 不调该接口（列表走 MySQL）。**监控盲区**：8002 `/health` 只探 MySQL 不探 Milvus，Milvus 停机时仍返回 200。详见 docs/04 P2-5 动作 3。
+- **Milvus 鉴权与专用账号（2026-11-24 收口）**：`deploy/milvus/milvus.yaml` `authorizationEnabled: true`。8002 已从 root 切到专用账号 `MILVUS_USER=milvus_rag`（角色 `rag_rw`，**A 档精确最小权限 26 条**，仅 `kb_chunks` / `kb_chunks_hybrid` 两集合，只含 `Query/Search/Load/Insert/Delete/Flush/CreateIndex` 等业务实际调用项），root 口令已由 6 字符默认值轮换为 32 字符随机串。匿名连接报 `missing authorization in header`。**⚠ 删 volume 重建后 root 会按 `milvus.yaml` 的 `defaultRootPassword` 重新初始化**（该值已同步为新口令，不再是工厂默认的 `Milvus`），但 `milvus_rag`/`rag_rw` 仍会全部消失（RBAC 存 etcd），须重跑 `scripts/milvus_rbac_setup.py --apply` 并回写 `logs/.milvus_rag_pw`。运维账号口令与回滚细则见 `ops.local.md`（gitignore），权限探针为 `scripts/milvus_rbac_probe.py`。`milvus_rag` 调 `list_collections` 报 `etcdserver: invalid auth token` 是 Milvus 2.6 非 root 缺陷，8002 不调该接口（列表走 MySQL）。**监控盲区已关闭（2026-11-25）**：8002 `/health` 现在真实探活 Milvus（`app/core/health.py::probe_milvus`，`MilvusClient.get_server_version()` + 独立 2s 超时 + 1s 结果缓存），不可用时返回 **HTTP 503**；`/health` 已由 `async def` 改普通 `def`（pymilvus 同步阻塞，走线程池不堵事件循环，与 `/retrieve` 同口径）。`VECTOR_STORE_BACKEND=chroma` 或 `MILVUS_HEALTH_ENABLED=false` 时为 `disabled` 且仍 200。详见 `docs/可用性收口验收报告.md`。
 - **生产知识库（2026-11-24）**：`3fcef9d1-658a-4348-aa50-cf81b501d483`「小智的项目知识库」，companion=`preset-2`，created_by=`system`，milvus/embedding-3/2048 维，6 文档 338 块（含人工事实块「本项目的技术栈」）。建库脚本 `scripts/build_production_kb.py`（预置伴侣禁建库，故以 system 身份直接落库）。**只收描述现状的文档**：方案/排期/任务清单类会稀释检索，验收报告类会把 fixtures 的虚构答案（PostgreSQL）带进生产库。详见 `docs/生产知识库建设与Milvus分批写入验收报告.md`。
 - **检索链路**：`retrieve` 路由必须是**普通 `def` 而非 `async def`**——底层 pymilvus `collection.search` 是同步阻塞，实测 async 下慢检索会阻塞事件循环导致 `/health` 无响应。
 - **rerank**：TEI 自托管 `bge-reranker-v2-m3`（容器名 `milvus-tei`，Milvus 容器视角 `http://tei:80`）。**Milvus v2.6.0 的 rerank deadline 源码硬编码 30s，不可配置**；CPU 推理约 24ms/字，4 候选约 22–26s，**当前性能不达标（远超 3s 预算）**，详见 `docs/RAG知识库数据导入验收报告.md`。
@@ -155,6 +158,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 - `docs/性能改进预检与dense-only定案报告.md` — 检索定案（四方案矩阵、聊天层实测、TEI 搁置理由、未解决项）
 - `docs/工具调用触发率实验报告.md` — 触发率实验（v1 作废原因、前後对照、防编造抽查、瞬时长尾）
 - `docs/生产知识库建设与Milvus分批写入验收报告.md` — 生产库建库（preset-2）/ 621→338 口径决策 / Milvus 64 条分批修复 / E-2 关账
+- `docs/可用性收口验收报告.md` — w32time 校时 / Milvus 容器自愈（kill 1 实测）/ 8002 `/health` 探 Milvus 返回 503 / 密钥审计（bak 未入库、当前 key 未泄漏）
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
