@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分离，四个独立服务。产品、文档和代码注释均以简体中文为主。
+AI 情侣互动产品（AI Companion）：AI 陪伴聊天应用，前后端分离，五个服务（四个业务服务 + RAG 管理前端）。产品、文档和代码注释均以简体中文为主。
 
 ## 服务与端口
 
 | 服务 | 目录 | 端口 | 技术栈 |
 | --- | --- | --- | --- |
 | 前端 | `frontend/` | 3000 | Vue 3 + TypeScript + Vite 5 + Pinia + Tailwind CSS |
+| RAG 管理前端 | `RAG-Knowledge-System/frontend/` | 3001 | Vue 3 + Vite 5；`/rag-api` 代理到 8002 |
 | Python AI 服务 | `backend/` | 5000 | FastAPI + 智谱 GLM（glm-4.5-air 文本 / glm-4v-flash 视觉 / cogview-4 图像）+ LangChain 1.x |
 | Java 业务后端 | `backend-java/` | **8081** | Spring Boot 3 + MyBatis Plus + MySQL |
 | RAG 知识库 | `RAG-Knowledge-System/backend/` | 8002 | FastAPI + **Milvus 2.6.0（默认）+ TEI rerank**；Chroma 保留为回退 |
@@ -46,21 +47,33 @@ cd RAG-Knowledge-System/backend
 pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8002
 
-# 一键启停（推荐）：四个服务统一走同一套 Start-Process + 重定向逻辑
+# 一键启停（推荐）：五个服务（3000/3001/5000/8081/8002）统一走同一套 Start-Process + 重定向逻辑
 powershell -NoProfile -File scripts/start-all.ps1
-powershell -NoProfile -File scripts/stop-all.ps1    # 按端口反查进程树，含 Java 8081
-powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个服务
-powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三处 token 一致性，不启动（exit 0/1）
+powershell -NoProfile -File scripts/stop-all.ps1    # 按端口反查进程树，含 Java 8081 与 3001
+powershell -NoProfile -File scripts/start-all.ps1 -Service 8081   # 只启单个服务（ValidateSet 含 '3000','3001','5000','8081','8002','docker','All'）
+powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验四处 token 一致性，不启动（exit 0/1）
 # Milvus/TEI 已纳管（2026-11-22 Phase 4）：
-#   start-all 的 All/8002/docker 会先 docker compose up -d，等 milvus-standalone
-#   healthy 且 TEI /health=200 才继续；TEI CPU 冷启动约 3.5–4 分钟，最长等 600s。
+#   start-all 的 All/8002/docker 会先起 Milvus，等 milvus-standalone healthy 才继续。
+#   **按 RERANK_ENABLED 分流（2026-11-25 修复）**：`Test-RerankEnabled`（start-all.ps1:108-132）
+#   读 `RAG-Knowledge-System/backend/.env` 的 RERANK_ENABLED；false（当前生产配置）→
+#   `docker compose up -d standalone` 只起 Milvus、**跳过 TEI 等待**；true → `up -d` 全量
+#   并额外等 `http://127.0.0.1:8080/health`（TEI CPU 冷启动 3.5–4 分钟，最长等 600s）。
+#   历史缺陷：改造前无条件等 TEI，而生产 RERANK_ENABLED=false，`-Service All/8002/docker` 必卡死。
+#   **8002 启动自动注入 JWT_SECRET（2026-11-25 修复）**：start-all.ps1:391 起从用户级
+#   环境变量读 JWT_SECRET 注入 Process 域再 Start-Process（Start-Process 不继承 shell 环境，
+#   不注入则 8002 启动自检 `verify_secret_alignment()` 直接 RuntimeError 退出）。
 #   stop-all 的 All/docker 用 compose stop（保卷，不用 down）；-Service docker 单独停。
+# ⚠ 3001 启动块会临时把 NODE_OPTIONS 压到 `--max-old-space-size=384 --max-semi-space-size=2`
+#   再还原（8GB 机器上 Vite 默认参数会 OOM：`Committing semi space failed`）。
 # 崩溃自愈（2026-11-25）：milvus/compose 的 standalone 已加 restart: unless-stopped。
 #   ⚠ restart 策略不覆盖 `docker stop`——验收崩溃自愈必须用 `docker exec milvus-standalone kill 1`。
 #   时钟校准：scripts/enable-w32time.ps1（管理员）启用 w32time + 换 NTP 源为 ntp.aliyun.com。
 ```
 
-**日志口径（2026-11-16 收口）**：统一写 `logs/<name>.out.log` / `<name>.error.log`，name ∈ `frontend-3000` / `ai-5000` / `java-8081` / `rag-8002`。**每次启动前把旧日志归档**为 `<name>.<stream>.<时间戳>.log`（因为 `Start-Process -RedirectStandardOutput` 会截断目标文件，不归档就会丢上次输出），每个服务每种流保留最近 5 个归档，超出自动删除。历史日志在 `logs/archive/`。
+**日志口径（2026-11-16 收口 / 2026-11-25 补 3001）**：统一写 `logs/<name>.out.log` / `<name>.error.log`，name ∈ `frontend-3000` / `rag-frontend-3001` / `ai-5000` / `java-8081` / `rag-8002`。**每次启动前把旧日志归档**为 `<name>.<stream>.<时间戳>.log`（因为 `Start-Process -RedirectStandardOutput` 会截断目标文件，不归档就会丢上次输出），每个服务每种流保留最近 5 个归档，超出自动删除。历史日志在 `logs/archive/`。
+
+> ⚠ **终端会带走它启动的整棵进程树（2026-11-25 实测）**：在 `win_bash` 里前台跑 `start-all.ps1`（或把它挂成后台 job）时，命令超时被杀 / `job_kill` 会**连带杀掉 `Start-Process` 起的整棵服务进程树**——日志里服务明明已 ready，端口瞬间归 000。要长期运行必须在独立终端里执行，或用 WMI 脱离父链：`([wmiclass]"Win32_Process").Create("cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""D:\Ai_robotchat\scripts\start-all.ps1"" -Service 3001 > ""D:\Ai_robotchat\logs\_start3001.log"" 2>&1", "D:\Ai_robotchat", $null)`（ReturnValue=0 即成功，进程 PPID 指向已消失的父 PID，脱离存活）。
+> ⚠ **不要用 `cmd /c set VAR=...&& python ...` 起常驻服务**：Ctrl+Close 事件会顺链带走子进程（8002 error log 里出现 `^C` 就是这个）。要注入环境变量请写 powershell 脚本，`SetEnvironmentVariable(...,'Process')` 后 `Start-Process`。
 
 > ⚠ 不要在 bash 里拼 `-RedirectStandardOutput "D:\path\\$VAR"`：bash 双引号会把 `\\` 折成 `\` 且把 `$VAR` 展开成空串，得到畸形路径（`D:\Ai_robotchat$VAR`），日志写到项目根目录且文件名不对——看起来像「重定向不生效」，实际是路径拼错。
 
@@ -127,7 +140,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 - SSE 流式格式：每行 `data: {"delta": "文本", "done": false}\n\n`，结束帧 `{"delta": "", "done": true}`；前端按 `data: ` 前缀逐行解析。
 - 关键端点：`/api/v1/ai/chat/stream`（普通流式）、`/api/v1/ai/chat/langchain/stream`（RAG + Function Calling 增强流式）、`/api/v1/ai/suggestions`、`/api/v1/memory/{user_id}`、`/api/v1/mood/{user_id}`。
 - **流式端点鉴权（P1-5 已完成）**：两个 `/stream` 端点用 `Depends(verify_service_token)` 校验 `X-Service-Token` 头，不匹配返回 401；`SERVICE_TOKEN` 未配置时跳过。**必须用依赖注入**——写在函数体内会被 Pydantic body 校验抢先（无 token + 非法 body 会返回 400 而非 401）。**仅防误调，非安全加固**：前端 token 会进浏览器产物。
-- **三处 token 必须同值（2026-11-24 故障复盘）**：`backend/.env` 的 `SERVICE_TOKEN`（5000 校验入站 + 出站调 8002）、`RAG-Knowledge-System/backend/.env` 的 `SERVICE_TOKEN`（8002 校验入站）、`frontend/.env.development` 与 `.env.production` 的 `VITE_SERVICE_TOKEN`（前端出站）。任一处漂移 → 5000 直接 401，请求不进业务逻辑、不触达 8002 与 LLM。**前端两个 env 文件是 Vite 构建期常量，改后必须重启 3000**，热更新无效。`start-all.ps1` 启动前已自动校验三处 token 指纹（不一致直接中止；`.env.production` 仅警告，8081/docker 跳过），`-CheckOnly` 可单跑，实现见 `scripts/lib/credentials.ps1`；前端 401 文案已点名 token 不一致（`frontend/src/lib/chatError.ts`），排查仍先看 `logs/ai-5000.out.log` 的 `chat/*/stream` 状态码。全量凭证配置点清单见 `docs/诊断-前端聊天401根因与凭证配置点清单.md`。
+- **四处 token 必须同值（2026-11-24 故障复盘 / 2026-11-25 扩至四处）**：`backend/.env` 的 `SERVICE_TOKEN`（5000 校验入站 + 出站调 8002）、`RAG-Knowledge-System/backend/.env` 的 `SERVICE_TOKEN`（8002 校验入站）、`frontend/.env.development` 与 `.env.production` 的 `VITE_SERVICE_TOKEN`（前端出站）、**`RAG-Knowledge-System/frontend/.env.development` 的 `VITE_RAG_SERVICE_TOKEN`（3001 管理台经 `/rag-api` 代理调 8002，2026-11-25 新增纳入校验）**。任一处漂移 → 5000 直接 401，请求不进业务逻辑、不触达 8002 与 LLM；3001 那处漂移只表现为管理台接口 401。**三个前端 env 文件都是 Vite 构建期常量，改后必须重启对应前端（3000 / 3001）**，热更新无效。`start-all.ps1` 启动前已自动校验四处 token 指纹（不一致直接中止；`.env.production` 仅警告，8081/docker 跳过），`-CheckOnly` 可单跑，实现见 `scripts/lib/credentials.ps1`（`MISMATCH` 提示分支按路径前缀匹配，`RAG-Knowledge-System/frontend/*` 的判断必须排在 `RAG-Knowledge-System/*` 之前，否则被通配吃掉）；前端 401 文案已点名 token 不一致（`frontend/src/lib/chatError.ts`），排查仍先看 `logs/ai-5000.out.log` 的 `chat/*/stream` 状态码。全量凭证配置点清单见 `docs/诊断-前端聊天401根因与凭证配置点清单.md`。
 
 ### 前端结构
 
@@ -146,6 +159,7 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 - `frontend/.env.development`（已被 gitignore，**不入库**）：`VITE_API_BASE_URL`（8081）、`VITE_AI_BASE_URL`（5000）、`VITE_SERVICE_TOKEN`（与后端一致）。入库的是 `frontend/.env.example` 模板。**不要给 `.env.development` 加 `!` 反向例外**——加了 token 后就会泄漏进 git 历史。
 - `AI_INTEGRATION.md` — 双链路架构文档，密钥一律 `sk-***` 占位（历史版本曾含明文，git 历史中仍存留旧智谱密码，勿再引用）。
 - **Java 端密钥注入**：`backend-java/application.yml` 中 MySQL/Redis 密码为 `${MYSQL_PASSWORD:}` / `${REDIS_PASSWORD:}`，**JWT 签名密钥为 `${JWT_SECRET:开发默认值}`**——三者的模板见 `backend-java/.env.example`。本机已设用户级变量（`setx`）；**必须新开终端启动 Java 才生效**，连接失败先排查环境变量。Redis 装在 `D:\IDEA\Redis-x64-3.2.100`（3.2.100），以 Windows 服务「Redis」方式运行、开机自启，conf 设有 `requirepass`，连接失败先查 `REDIS_PASSWORD` 与服务状态。未设置 `JWT_SECRET` 时启动会打印告警（`JwtUtil` 的 `@PostConstruct`），生产部署必须注入。
+- **WSL/Docker 内存上限（2026-11-25）**：新建 `C:\Users\limingjie\.wslconfig`，`[wsl2]` / `memory=4GB` / `autoMemoryReclaim=gradual`。此前 vmmemWSL 无上限长到 3.1GB（Milvus 容器实际仅 236MB），把 8GB 机器逼到 free≈200MB，Vite 起不来。改后 vmmemWSL 稳定 ~2GB。**回收内存必须完整退出 Docker Desktop 再 `wsl --shutdown`**——只跑 `wsl --shutdown` 时 Docker Desktop 3 秒就把 WSL 拉回来，等于没做。
 - `.gitignore` 已忽略 `.env`、`chroma_db/`、`ai_companion.db`、`*.tmp`、`*.stackdump` 等运行时/密钥文件；`RAG-Knowledge-System/backend/storage/uploads/`、`backend-java/uploads/` 上传数据同样不入库。**四个 `.env.example` 模板（backend / frontend / RAG / backend-java）通过 `!` 例外入库，不要误删这些例外规则。**
 
 ## 文档
@@ -159,6 +173,10 @@ powershell -NoProfile -File scripts/start-all.ps1 -CheckOnly      # 只校验三
 - `docs/工具调用触发率实验报告.md` — 触发率实验（v1 作废原因、前後对照、防编造抽查、瞬时长尾）
 - `docs/生产知识库建设与Milvus分批写入验收报告.md` — 生产库建库（preset-2）/ 621→338 口径决策 / Milvus 64 条分批修复 / E-2 关账
 - `docs/可用性收口验收报告.md` — w32time 校时 / Milvus 容器自愈（kill 1 实测）/ 8002 `/health` 探 Milvus 返回 503 / 密钥审计（bak 未入库、当前 key 未泄漏）
+- `docs/RAG前端管理台重构验收报告.md` — RAG 管理台重构（左导航布局 / 5 页面 / P0 四项缺陷 / P1 八项能力 / 三尺寸量测矩阵 / `/health` 三态健康点）
+- `docs/RAG后端改造方案.md` — RAG 后端（8002）11 项缺陷 + 5 项新能力（逐条 curl 证据 + 根因行号 + 可抄代码 + 验收方法）
+- `docs/RAG后端改造派工提示词.md` — 上述方案拆成 3 批次自包含派工提示词（一次只发一批，批次 1 = `/retrieve` 越权 / 建库必绑角色 / 上传半成功）
+- `docs/RAG后端派工总提示词.md` — 发给零上下文 agent 的**开场包**：项目速览 text 块（四服务关系 / 代码地图 / 数据现状 / 七条铁律 / 三个必踩的坑 / 60 秒自检）+ 12 项任务全图 + 交付格式 + 预先回答的 7 个问题。用法是先发速览块，再粘 `RAG后端改造派工提示词.md` 的**一个**批次
 - `docs/前端技术文档.md`、`docs/AI聊天功能优化方案.md`、`docs/功能上线排期指南.md`
 
 ## 工作约定（所有任务通用，优先级高于个人习惯）
