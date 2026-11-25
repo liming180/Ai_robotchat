@@ -135,6 +135,8 @@ function Test-ServiceTokenConsistency {
             } else {
                 if ($check.Name -like 'frontend/*') {
                     $errors.Add($message + '改完必须重启前端 3000（Vite 只在启动期注入 VITE_SERVICE_TOKEN）。')
+                } elseif ($check.Name -like 'RAG-Knowledge-System/frontend/*') {
+                    $errors.Add($message + '改完必须重启 RAG 管理前端 3001（Vite 只在启动期注入 VITE_RAG_SERVICE_TOKEN）。')
                 } elseif ($check.Name -like 'RAG-Knowledge-System/*') {
                     $errors.Add($message + '改完必须重启 5000 与 8002。')
                 } else {

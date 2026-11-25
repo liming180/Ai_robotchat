@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
-启动 AI Companion 的四个服务：前端(3000)、Python AI(5000)、Java 业务(8081)、RAG 知识库(8002)。
+启动 AI Companion 的五个服务：前端(3000)、RAG 管理前端(3001)、Python AI(5000)、Java 业务(8081)、RAG 知识库(8002)。
 .DESCRIPTION
-四个服务统一走同一套启动逻辑（Start-Process + 重定向），日志固定写入 logs/<name>.out.log
+五个服务统一走同一套启动逻辑（Start-Process + 重定向），日志固定写入 logs/<name>.out.log
 与 logs/<name>.error.log。**每次启动前会把旧日志归档为 <name>.<stream>.<时间戳>.log**，
 每个服务每种流最多保留 KeepArchives 个归档（默认 5），超出自动删除。
 
@@ -20,7 +20,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('3000', '5000', '8081', '8002', 'docker', 'All')]
+    [ValidateSet('3000', '3001', '5000', '8081', '8002', 'docker', 'All')]
     [string]$Service = 'All',
 
     # 只做前置校验（凭证一致性），不启动任何服务；退出码 0=通过 / 1=失败
@@ -105,11 +105,42 @@ function Invoke-LogArchive([string]$Name) {
     }
 }
 
+function Test-RerankEnabled {
+    <#
+    读 RAG 后端 .env 的 RERANK_ENABLED，决定要不要拉起并等待 TEI。
+
+    背景（2026-11-22 dense-only 定案）：生产配置 RERANK_ENABLED=false，检索
+    走纯 COSINE，TEI 完全不参与。此时还 `compose up -d` 全量会把 milvus-tei
+    一起拉起来，实测把 vmmemWSL 从 3122MB 顶到 4016MB，而这台机器只有 8GB，
+    「等待 TEI health=200」还要白等最多 600s（TEI CPU 冷启动 3.5–4 分钟），
+    且一旦 TEI 没起来就直接 throw，`-Service All/8002/docker` 整条链路起不来。
+
+    读不到文件或读不到该键时按 $false 处理，与 app/core/config.py:57
+    `rerank_enabled: bool = False` 的代码默认值保持一致。
+    #>
+    $envFile = Join-Path $ProjectRoot 'RAG-Knowledge-System\backend\.env'
+    if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) { return $false }
+    foreach ($line in (Get-Content -LiteralPath $envFile -Encoding UTF8)) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        if ($trimmed -match '^RERANK_ENABLED\s*=\s*(?<v>[^#]*)') {
+            $value = $Matches['v'].Trim().Trim('"').Trim("'").ToLowerInvariant()
+            return ($value -in @('1', 'true', 'yes', 'on'))
+        }
+    }
+    return $false
+}
+
 function Start-DockerStack {
     <#
-    启动 Milvus + TEI（compose up -d），并等到 milvus-standalone healthy 且 TEI
-    /health 返回 200 才放行。8002 的检索强依赖这两者，先起 8002 会得到
-    「Milvus 连接失败 / rerank 不可用」的假故障。
+    启动 Milvus（+ 可选 TEI），并等到 milvus-standalone healthy 才放行。
+    8002 启动即连 Milvus，先起 8002 会得到「Milvus 连接失败」的假故障。
+
+    是否连 TEI 一起起、是否等 TEI /health，由 Test-RerankEnabled 决定：
+    - RERANK_ENABLED=false（生产当前配置）：只 `up -d standalone`，只等 Milvus
+      healthy。TEI 容器即使之前在跑也不会被带起来，省 1GB 级内存与 3.5 分钟等待。
+    - RERANK_ENABLED=true：行为与本函数改造前逐字节一致（up -d 全量 + 等两者）。
+
     只用 up -d / stop，不用 down —— 保卷保数据。
     #>
     $compose = Join-Path $ProjectRoot 'deploy\milvus\docker-compose.yml'
@@ -120,9 +151,14 @@ function Start-DockerStack {
         throw '未找到 docker 命令，无法启动 Milvus/TEI。'
     }
 
+    $rerankEnabled = Test-RerankEnabled
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $log = Join-Path $LogDirectory "milvus-compose.$stamp.log"
-    Write-Status "启动 Milvus/TEI（docker compose up -d）..."
+    if ($rerankEnabled) {
+        Write-Status '启动 Milvus/TEI（docker compose up -d，RERANK_ENABLED=true）...'
+    } else {
+        Write-Status '启动 Milvus（docker compose up -d standalone；RERANK_ENABLED=false，跳过 TEI）...'
+    }
     # docker compose 把 "Container xxx Running" 写到 stderr；脚本全局
     # $ErrorActionPreference='Stop' 会把原生 stderr 当成 NativeCommandError。
     # 这里局部降为 Continue，用退出码判断成败。
@@ -133,7 +169,13 @@ function Start-DockerStack {
     try {
         # 用变量接住 2>&1，避免 PowerShell 把 docker 的 stderr 渲染成
         # NativeCommandError 装饰文本写进日志。
-        $composeOutput = & docker compose -f $compose up -d 2>&1
+        # 只写服务名 standalone：`up -d` 不带服务名会解析整个 compose 文件，
+        # 把 tei 也一并拉起（RERANK_ENABLED=false 时纯属浪费内存）。
+        if ($rerankEnabled) {
+            $composeOutput = & docker compose -f $compose up -d 2>&1
+        } else {
+            $composeOutput = & docker compose -f $compose up -d standalone 2>&1
+        }
         $composeExit = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousEap
@@ -144,29 +186,46 @@ function Start-DockerStack {
     }
 
     # TEI 冷启动实测约 3.5 分钟（Bert 加载 + CPU warmup），180s 不够；
-    # Milvus 通常 <60s healthy。两者都就绪才放行 8002。
+    # Milvus 通常 <60s healthy。
+    # RERANK_ENABLED=false 时不探 TEI（它可能压根没起），只等 Milvus healthy。
     $deadline = [DateTime]::UtcNow.AddSeconds(600)
     $lastReport = [DateTime]::UtcNow
     while ([DateTime]::UtcNow -lt $deadline) {
         $milvusState = [string](& docker inspect --format '{{.State.Health.Status}}' milvus-standalone 2>$null)
-        $teiOk = $false
-        try {
-            $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 3
-            $teiOk = $resp.StatusCode -eq 200
-        } catch {
+        $teiOk = $null
+        if ($rerankEnabled) {
             $teiOk = $false
+            try {
+                $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 3
+                $teiOk = $resp.StatusCode -eq 200
+            } catch {
+                $teiOk = $false
+            }
         }
-        if ($milvusState.Trim() -eq 'healthy' -and $teiOk) {
-            Write-Status "Milvus/TEI 就绪（compose 日志：$log）" 'Green'
+        $ready = ($milvusState.Trim() -eq 'healthy')
+        if ($rerankEnabled) { $ready = $ready -and $teiOk }
+        if ($ready) {
+            if ($rerankEnabled) {
+                Write-Status "Milvus/TEI 就绪（compose 日志：$log）" 'Green'
+            } else {
+                Write-Status "Milvus 就绪（未启 TEI；compose 日志：$log）" 'Green'
+            }
             return
         }
         if (([DateTime]::UtcNow - $lastReport).TotalSeconds -ge 15) {
-            Write-Status "等待就绪：milvus=$($milvusState.Trim())，TEI health=$teiOk（最长 600s，冷启动约 3.5 分钟）" 'Yellow'
+            if ($rerankEnabled) {
+                Write-Status "等待就绪：milvus=$($milvusState.Trim())，TEI health=$teiOk（最长 600s，冷启动约 3.5 分钟）" 'Yellow'
+            } else {
+                Write-Status "等待就绪：milvus=$($milvusState.Trim())（未启 TEI，最长 600s）" 'Yellow'
+            }
             $lastReport = [DateTime]::UtcNow
         }
         Start-Sleep -Seconds 3
     }
-    throw "Milvus/TEI 600 秒内未就绪，请查看日志：$log"
+    if ($rerankEnabled) {
+        throw "Milvus/TEI 600 秒内未就绪，请查看日志：$log"
+    }
+    throw "Milvus 600 秒内未就绪，请查看日志：$log"
 }
 
 function Start-AppService {
@@ -229,10 +288,10 @@ function Start-AppService {
 }
 
 # ---------- 凭证一致性前置检查（P2-5 动作 1）----------
-# 任何服务启动之前执行：三处 SERVICE_TOKEN 不一致会让 5000 直接 401，
+# 任何服务启动之前执行：四处 SERVICE_TOKEN 不一致会让 5000 或 3001 直接 401，
 # 请求不进业务逻辑（2026-11-24 故障）。只比 sha256 前 8 位，不打印原值。
 # 范围按 -Service 收敛：Java/docker 与 token 无关，跳过。
-if ($Service -in @('All', '3000', '5000', '8002')) {
+if ($Service -in @('All', '3000', '3001', '5000', '8002')) {
     $credentialChecks = @(
         [pscustomobject]@{ Name = 'backend/.env'; File = 'backend/.env'; Key = 'SERVICE_TOKEN'; Severity = 'Base' }
     )
@@ -251,6 +310,15 @@ if ($Service -in @('All', '3000', '5000', '8002')) {
         $credentialChecks += [pscustomobject]@{
             Name = 'RAG-Knowledge-System/backend/.env'; File = 'RAG-Knowledge-System/backend/.env'
             Key = 'SERVICE_TOKEN'; Severity = 'Error'
+        }
+    }
+    # 第 4 处（2026-11-25）：RAG 管理前端经 vite proxy 调 8002 的 /retrieve，
+    # 该页面的 VITE_RAG_SERVICE_TOKEN 必须与 8002 的 SERVICE_TOKEN 同值，否则 401。
+    if ($Service -in @('All', '3001')) {
+        $credentialChecks += [pscustomobject]@{
+            Name = 'RAG-Knowledge-System/frontend/.env.development'
+            File = 'RAG-Knowledge-System/frontend/.env.development'
+            Key = 'VITE_RAG_SERVICE_TOKEN'; Severity = 'Error'
         }
     }
 
@@ -297,6 +365,23 @@ if ($Service -in @('All', '3000')) {
         -WorkingDirectory (Join-Path $ProjectRoot 'frontend') -HealthUrl 'http://127.0.0.1:3000/'
 }
 
+if ($Service -in @('All', '3001')) {
+    # RAG 管理前端：与 3000 共用 npm，走自己的 vite（端口 3001 + /rag-api 代理到 8002）。
+    # 8GB 机器上两个 Vite 并存时默认 V8 参数会报「Committing semi space failed」
+    # 直接崩（2026-11-25 实测两次），故启动期间临时压低堆上限，启动完立刻还原。
+    $Npm = (Get-Command npm.cmd -ErrorAction Stop).Source
+    $previousNodeOptions = [Environment]::GetEnvironmentVariable('NODE_OPTIONS', 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable('NODE_OPTIONS', '--max-old-space-size=384 --max-semi-space-size=2', 'Process')
+        Start-AppService -Name 'rag-frontend-3001' -Port 3001 -Executable $Npm `
+            -ArgumentList @('run', 'dev', '--', '--host', '127.0.0.1', '--port', '3001') `
+            -WorkingDirectory (Join-Path $ProjectRoot 'RAG-Knowledge-System\frontend') `
+            -HealthUrl 'http://127.0.0.1:3001/'
+    } finally {
+        [Environment]::SetEnvironmentVariable('NODE_OPTIONS', $previousNodeOptions, 'Process')
+    }
+}
+
 if ($Service -in @('All', '5000')) {
     Start-AppService -Name 'ai-5000' -Port 5000 -Executable $Python `
         -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '5000') `
@@ -304,10 +389,27 @@ if ($Service -in @('All', '5000')) {
 }
 
 if ($Service -in @('All', '8002')) {
-    Start-AppService -Name 'rag-8002' -Port 8002 -Executable $Python `
-        -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '8002') `
-        -WorkingDirectory (Join-Path $ProjectRoot 'RAG-Knowledge-System\backend') `
-        -HealthUrl 'http://127.0.0.1:8002/health'
+    # 8002 启动自检（RAG-Knowledge-System/backend/app/core/security.py
+    # verify_secret_alignment）在 settings.jwt_secret_key 为空时直接
+    # raise RuntimeError("未读取到 JWT_SECRET")，服务起不来。
+    # 密钥只存在于「用户级」环境变量（setx 写入），本进程环境为空——而
+    # Start-Process 从当前进程复制环境，所以必须显式把用户级值搬进 Process
+    # 作用域，否则 -Service 8002 / All 必然自检失败（2026-11-25 实测）。
+    # 与 3001 的 NODE_OPTIONS 同一套写法：改前取值，finally 还原。
+    $previousJwtSecret = [Environment]::GetEnvironmentVariable('JWT_SECRET', 'Process')
+    $userJwtSecret = [Environment]::GetEnvironmentVariable('JWT_SECRET', 'User')
+    if (-not $userJwtSecret) {
+        throw "未读取到用户级 JWT_SECRET，8002 启动自检会失败。先执行：setx JWT_SECRET <值>（HS512 需 >=64 字节）并用新终端重试。"
+    }
+    try {
+        [Environment]::SetEnvironmentVariable('JWT_SECRET', $userJwtSecret, 'Process')
+        Start-AppService -Name 'rag-8002' -Port 8002 -Executable $Python `
+            -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '8002') `
+            -WorkingDirectory (Join-Path $ProjectRoot 'RAG-Knowledge-System\backend') `
+            -HealthUrl 'http://127.0.0.1:8002/health'
+    } finally {
+        [Environment]::SetEnvironmentVariable('JWT_SECRET', $previousJwtSecret, 'Process')
+    }
 }
 
 if ($Service -in @('All', '8081')) {

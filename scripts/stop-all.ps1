@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-停止 AI Companion 的四个服务：前端(3000)、Python AI(5000)、Java 业务(8081)、RAG 知识库(8002)。
+停止 AI Companion 的五个服务：前端(3000)、RAG 管理前端(3001)、Python AI(5000)、Java 业务(8081)、RAG 知识库(8002)。
 .DESCRIPTION
 仅停止本工作区、指定端口的服务进程：先按端口找到实际监听进程，再向上找到启动器
 （npm / uvicorn / mvn），递归收集整棵进程树后逐个停止，避免留下孤儿子进程。
@@ -16,7 +16,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('3000', '5000', '8081', '8002', 'docker', 'All')]
+    [ValidateSet('3000', '3001', '5000', '8081', '8002', 'docker', 'All')]
     [string]$Service = 'All',
     [switch]$Force
 )
@@ -41,6 +41,7 @@ function Get-DescendantProcesses([int]$ParentId, [array]$AllProcesses) {
 
 $Targets = @(
     @{ Name = 'frontend';  Port = 3000; WorkDir = (Join-Path $ProjectRoot 'frontend');                        Markers = @('vite');       Launchers = @('node.exe', 'npm.cmd', 'npm.exe', 'cmd.exe') },
+    @{ Name = 'rag-frontend'; Port = 3001; WorkDir = (Join-Path $ProjectRoot 'RAG-Knowledge-System\frontend'); Markers = @('vite');       Launchers = @('node.exe', 'npm.cmd', 'npm.exe', 'cmd.exe') },
     @{ Name = 'ai';        Port = 5000; WorkDir = (Join-Path $ProjectRoot 'backend');                         Markers = @('uvicorn');    Launchers = @('python.exe', 'uvicorn.exe') },
     @{ Name = 'rag';       Port = 8002; WorkDir = (Join-Path $ProjectRoot 'RAG-Knowledge-System\backend');     Markers = @('uvicorn');    Launchers = @('python.exe', 'uvicorn.exe') },
     @{ Name = 'java';      Port = 8081; WorkDir = (Join-Path $ProjectRoot 'backend-java');                    Markers = @('spring-boot'); Launchers = @('java.exe', 'mvn.cmd', 'mvn.exe', 'cmd.exe') }
@@ -145,7 +146,7 @@ if ($Service -eq 'docker') {
     exit 0
 }
 
-$PortsToCheck = if ($Service -eq 'All') { @(3000, 5000, 8081, 8002) } else { @([int]$Service) }
+$PortsToCheck = if ($Service -eq 'All') { @(3000, 3001, 5000, 8081, 8002) } else { @([int]$Service) }
 $Remaining = @(Get-NetTCPConnection -State Listen -LocalPort $PortsToCheck -ErrorAction SilentlyContinue)
 if ($Remaining.Count -gt 0) {
     $ports = ($Remaining | Select-Object -ExpandProperty LocalPort -Unique) -join ', '
